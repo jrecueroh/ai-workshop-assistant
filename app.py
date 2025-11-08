@@ -37,14 +37,20 @@ if st.button("Generar mapa"):
         TEXT:
         \"\"\"{input_text}\"\"\"
         """)
-        resp = openai.ChatCompletion.create(
-            model="gpt-5-mini",
-            messages=[{"role":"system","content":"Eres un experto en procesos de negocio."},
-                      {"role":"user","content": prompt}],
-            temperature=0.0,
-            max_tokens=800
-        )
-        content = resp['choices'][0]['message']['content']
+        from openai import OpenAI
+
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+resp = client.chat.completions.create(
+    model="gpt-5-mini",
+    messages=[
+        {"role":"system","content":"Eres un experto en procesos de negocio."},
+        {"role":"user","content": prompt}
+    ],
+    temperature=0.0,
+)
+content = resp.choices[0].message.content
+
 
         import re
         m = re.search(r"\{.*\}", content, re.S)
