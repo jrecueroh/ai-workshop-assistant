@@ -52,12 +52,15 @@ resp = client.chat.completions.create(
 content = resp.choices[0].message.content
 
 
-        import re
-        m = re.search(r"\{.*\}", content, re.S)
-        if m:
-            parsed = json.loads(m.group(0))
-        else:
-            parsed = {"steps":[],"actors":[],"inputs":[],"outputs":[],"pains":[content]}
+import re
+m = re.search(r"\{.*\}", content, re.S)
+if m:
+    parsed = json.loads(m.group(0))
+else:
+    parsed = {"steps":[], "actors":[], "inputs":[], "outputs":[], "pains":[content]}
+
+
+
 
         # Generar Mermaid
         steps = parsed.get("steps", [])
