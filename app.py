@@ -4,33 +4,34 @@ import pandas as pd
 import json
 import re
 
-# ==========================================
+# ==============================
 # CONFIGURACIÓN
-# ==========================================
+# ==============================
 st.set_page_config(page_title="AI Workshop Assistant — BPM Visualizer", layout="wide")
 st.title("🧩 AI Workshop Assistant — Business Process Visualizer")
 
 st.markdown("""
 Convierte tu descripción de proceso o workshop en un **mapa visual estilo BPMN**,  
-junto con una estructura organizada y stakeholders identificados automáticamente.
+junto con actores y problemas detectados automáticamente por IA.
 """)
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# ==========================================
-# LIMPIADOR DE TEXTO PARA MERMAID
-# ==========================================
+# ==============================
+# LIMPIEZA DE TEXTO
+# ==============================
 def clean_label(text):
-    """Evita errores de sintaxis Mermaid escapando comillas y emojis."""
+    """Limpia texto para Mermaid (sin comillas, emojis o símbolos conflictivos)."""
     if not text:
         return ""
-    text = re.sub(r'["{}<>#|]', '', text)  # quitar símbolos conflictivos
+    text = re.sub(r"[\"'{}<>#|]", "", text)  # quitar caracteres ilegales
     text = text.replace("\\n", " ").replace("\n", " ")
+    text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-# ==========================================
-# FUNCIÓN PARA GENERAR DIAGRAMA MERMAID
-# ==========================================
+# ==============================
+# GENERAR DIAGRAMA MERMAID
+# ==============================
 def generate_mermaid(steps):
     mermaid = ["flowchart LR"]
     for i, step in enumerate(steps):
@@ -42,6 +43,7 @@ def generate_mermaid(steps):
         if actor:
             label += f" ({actor})"
 
+        # Asignar forma y color
         if node_type == "start":
             mermaid.append(f'    A{i}(["{label}"]):::start')
         elif node_type == "end":
@@ -54,6 +56,7 @@ def generate_mermaid(steps):
         if i > 0:
             mermaid.append(f"    A{i-1} --> A{i}")
 
+    # Añadir estilos
     mermaid.append("""
     classDef start fill:#4CAF50,color:#fff;
     classDef end fill:#37474F,color:#fff;
@@ -62,13 +65,13 @@ def generate_mermaid(steps):
     """)
     return "\n".join(mermaid)
 
-# ==========================================
-# INTERFAZ PRINCIPAL
-# ==========================================
+# ==============================
+# INTERFAZ
+# ==============================
 input_text = st.text_area(
-    "✏️ Pega la transcripción o descripción del proceso",
+    "✏️ Pega la descripción del proceso",
     height=250,
-    placeholder="Ejemplo: El cliente hace un pedido, verificamos si hay stock disponible..."
+    placeholder="Ejemplo: El cliente realiza un pedido, se verifica el stock, se factura y se entrega..."
 )
 
 if st.button("🚀 Analizar y generar mapa"):
@@ -82,19 +85,18 @@ if st.button("🚀 Analizar y generar mapa"):
                 model="gpt-5-mini",
                 messages=[
                     {"role": "system", "content": """
-Eres un experto en modelado de procesos (BPMN). 
-Analiza la descripción y devuelve un JSON simple con:
+Eres un experto en modelado de procesos BPMN. 
+Devuelve un JSON con formato simple:
 {
  "steps": [
    {"name": "Inicio", "type": "start"},
-   {"name": "Customer places order", "type": "task", "actor": "Customer"},
-   {"name": "Product available?", "type": "decision"},
-   {"name": "Process Payment", "type": "task", "actor": "Sales"},
-   {"name": "Deliver order", "type": "task", "actor": "Logistics"},
+   {"name": "Verificar stock", "type": "decision"},
+   {"name": "Procesar pago", "type": "task", "actor": "Ventas"},
+   {"name": "Entregar producto", "type": "task", "actor": "Logística"},
    {"name": "Fin", "type": "end"}
  ],
- "actors": ["Customer", "Sales", "Logistics"],
- "pains": ["Retrasos en validación de stock", "Errores en facturación"]
+ "actors": ["Ventas", "Logística"],
+ "pains": ["Errores en inventario", "Retrasos en entrega"]
 }
                     """},
                     {"role": "user", "content": input_text},
@@ -103,26 +105,36 @@ Analiza la descripción y devuelve un JSON simple con:
 
             ai_output = response.choices[0].message.content.strip()
 
+            # Intentar parsear JSON
             try:
                 data = json.loads(ai_output)
-            except json.JSONDecodeError:
-                st.warning("⚠️ La IA devolvió texto no estructurado. Mostrando salida sin procesar.")
-                st.text(ai_output)
+            except Exception:
+                st.warning("⚠️ La IA devolvió texto no estructurado.")
+                st.code(ai_output)
                 data = {}
 
-            if data:
-                steps = data.get("steps", [])
-                actors = data.get("actors", [])
-                pains = data.get("pains", [])
+            if not data:
+                st.stop()
 
-                tabs = st.tabs(["🗺️ Mapa Visual BPM", "📋 Estructura JSON", "👥 Stakeholders", "⚠️ Pain Points"])
+            steps = data.get("steps", [])
+            actors = data.get("actors", [])
+            pains = data.get("pains", [])
 
-                # ==========================================
-                # 🗺️ MAPA VISUAL RENDERIZADO (MERMAID)
-                # ==========================================
-                with tabs[0]:
-                    st.subheader("🧩 Mapa visual del proceso (BPMN)")
-                    mermaid_code = generate_mermaid(steps)
+            tabs = st.tabs(["🗺️ Mapa Visual", "📋 Estructura", "👥 Actores", "⚠️ Problemas"])
+
+            # ==============================
+            # 🗺️ MAPA VISUAL
+            # ==============================
+            with tabs[0]:
+                st.subheader("🧩 Mapa visual del proceso")
+                mermaid_code = generate_mermaid(steps)
+
+                # Validar sintaxis Mermaid (no debería fallar)
+                if "flowchart" not in mermaid_code:
+                    st.error("El código Mermaid parece inválido. Verifica los datos generados.")
+                    st.code(mermaid_code)
+                else:
+                    # Renderizar en HTML con mermaid.js
                     st.components.v1.html(
                         f"""
                         <div class="mermaid">
@@ -130,37 +142,36 @@ Analiza la descripción y devuelve un JSON simple con:
                         </div>
                         <script type="module">
                           import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-                          mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});
+                          mermaid.initialize({{ startOnLoad: true, theme: "neutral", securityLevel: "loose" }});
                         </script>
                         """,
                         height=700,
                     )
 
-                # ==========================================
-                # 📋 ESTRUCTURA JSON
-                # ==========================================
-                with tabs[1]:
-                    st.json(data)
+            # ==============================
+            # 📋 JSON
+            # ==============================
+            with tabs[1]:
+                st.json(data)
 
-                # ==========================================
-                # 👥 STAKEHOLDERS
-                # ==========================================
-                with tabs[2]:
-                    st.subheader("👥 Actores / Stakeholders")
-                    if actors:
-                        st.dataframe(pd.DataFrame(actors, columns=["Stakeholders"]))
-                    else:
-                        st.info("No se detectaron actores.")
+            # ==============================
+            # 👥 ACTORES
+            # ==============================
+            with tabs[2]:
+                if actors:
+                    st.dataframe(pd.DataFrame(actors, columns=["Stakeholders"]))
+                else:
+                    st.info("No se detectaron actores.")
 
-                # ==========================================
-                # ⚠️ PAIN POINTS
-                # ==========================================
-                with tabs[3]:
-                    st.subheader("⚠️ Problemas detectados")
-                    if pains:
-                        st.dataframe(pd.DataFrame(pains, columns=["Pain Points"]))
-                    else:
-                        st.info("No se detectaron problemas.")
+            # ==============================
+            # ⚠️ PROBLEMAS
+            # ==============================
+            with tabs[3]:
+                if pains:
+                    st.dataframe(pd.DataFrame(pains, columns=["Pain Points"]))
+                else:
+                    st.info("No se detectaron problemas.")
 
         except Exception as e:
             st.error(f"Error durante el análisis: {e}")
+
