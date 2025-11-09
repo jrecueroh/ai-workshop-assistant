@@ -18,7 +18,7 @@ La herramienta generará un **diagrama Mermaid** y un **resumen estructurado**.
 """)
 
 # ===== Configuración =====
-USE_MOCK = True  # Cambia a False cuando tengas crédito
+USE_MOCK = False  # Cambia a False cuando tengas crédito
 if not USE_MOCK:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
