@@ -1,13 +1,14 @@
 import streamlit as st
-import openai
-import os
+from openai import OpenAI
 import json
 from textwrap import dedent
 import base64
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import io
+import re
 
+# Configuración de la página
 st.set_page_config(page_title="AI Workshop Assistant", layout="wide")
 st.title("AI Workshop Assistant — Generador de mapas (Mermaid)")
 
@@ -16,9 +17,10 @@ Pega aquí la transcripción o descripción de tu workshop.
 La herramienta generará un **diagrama Mermaid** y un resumen estructurado.
 """)
 
-# OpenAI API key desde Streamlit Cloud Secrets
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+# Conexión con OpenAI usando Secrets de Streamlit
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
+# Área de texto para workshop
 input_text = st.text_area("Transcripción / Descripción", height=250)
 
 if st.button("Generar mapa"):
@@ -37,32 +39,26 @@ if st.button("Generar mapa"):
         TEXT:
         \"\"\"{input_text}\"\"\"
         """)
-        from openai import OpenAI
+        
+        resp = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {"role":"system","content":"Eres un experto en procesos de negocio."},
+                {"role":"user","content": prompt}
+            ],
+            temperature=0.0,
+        )
 
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        content = resp.choices[0].message.content
 
-resp = client.chat.completions.create(
-    model="gpt-5-mini",
-    messages=[
-        {"role":"system","content":"Eres un experto en procesos de negocio."},
-        {"role":"user","content": prompt}
-    ],
-    temperature=0.0,
-)
-content = resp.choices[0].message.content
+        # Extraer JSON del texto generado
+        m = re.search(r"\{.*\}", content, re.S)
+        if m:
+            parsed = json.loads(m.group(0))
+        else:
+            parsed = {"steps":[], "actors":[], "inputs":[], "outputs":[], "pains":[content]}
 
-
-import re
-m = re.search(r"\{.*\}", content, re.S)
-if m:
-    parsed = json.loads(m.group(0))
-else:
-    parsed = {"steps":[], "actors":[], "inputs":[], "outputs":[], "pains":[content]}
-
-
-
-
-        # Generar Mermaid
+        # Generar diagrama Mermaid
         steps = parsed.get("steps", [])
         mermaid = ["flowchart TD"]
         for i, s in enumerate(steps):
@@ -72,12 +68,14 @@ else:
                 mermaid.append(f'    A{i-1} --> {node}')
         mermaid_code = "\n".join(mermaid)
 
+    # Mostrar resultados
     st.subheader("Resumen estructurado")
     st.json(parsed)
 
     st.subheader("Diagrama Mermaid")
     st.markdown("```mermaid\n" + mermaid_code + "\n```")
 
+    # Exportar PDF simple
     if st.button("Exportar PDF (simple)"):
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=A4)
@@ -87,7 +85,7 @@ else:
         text.textLine("")
         text.textLine("Resumen:")
         c.drawText(text)
-        c.drawString(40,760, str(parsed))
+        c.drawString(40, 760, str(parsed))
         c.showPage()
         c.save()
         buffer.seek(0)
