@@ -1,45 +1,45 @@
 import streamlit as st
 from openai import OpenAI
+from openai.error import RateLimitError
 import json
+import re
 from textwrap import dedent
+import io
 import base64
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-import io
-import re
 
 # Configuración de la página
 st.set_page_config(page_title="AI Workshop Assistant", layout="wide")
 st.title("AI Workshop Assistant — Generador de mapas (Mermaid)")
 
 st.markdown("""
-Pega aquí la transcripción o descripción de tu workshop.
-La herramienta generará un **diagrama Mermaid** y un resumen estructurado.
+Pega aquí la transcripción o descripción de tu workshop.  
+La herramienta generará un **diagrama Mermaid** y un **resumen estructurado**.
 """)
 
 # Conexión con OpenAI usando Secrets de Streamlit
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# Área de texto para workshop
+# Área de texto
 input_text = st.text_area("Transcripción / Descripción", height=250)
 
-if st.button("Generar mapa"):
-    if not input_text.strip():
-        st.warning("Pega algo de texto primero.")
-        st.stop()
+def generar_resumen_y_diagrama(texto):
+    prompt = dedent(f"""
+    Eres un asistente experto en mapear procesos. Extrae:
+    1) Lista de pasos secuenciales (ordenados)
+    2) Actores/roles principales
+    3) Entradas y salidas
+    4) Pain points/observaciones
 
-    with st.spinner("Generando..."):
-        prompt = dedent(f"""
-        Eres un asistente experto en mapear procesos. A partir del siguiente texto, extrae:
-        1) Una lista de pasos secuenciales (ordenados) con frases cortas.
-        2) Actores/roles principales.
-        3) Entradas y salidas.
-        4) Pain points/observaciones.
-        Devuélvelo en JSON con claves: steps (lista), actors (lista), inputs (lista), outputs (lista), pains (lista).
-        TEXT:
-        \"\"\"{input_text}\"\"\"
-        """)
-        
+    Devuelve todo en JSON con claves:
+    steps (lista), actors (lista), inputs (lista), outputs (lista), pains (lista)
+
+    TEXT:
+    \"\"\"{texto}\"\"\"
+    """)
+
+    try:
         resp = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
@@ -48,47 +48,60 @@ if st.button("Generar mapa"):
             ],
             temperature=0.0,
         )
+    except RateLimitError:
+        st.warning("Demasiadas solicitudes a la API. Espera 10 segundos y prueba de nuevo.")
+        return None, None
 
-        content = resp.choices[0].message.content
+    content = resp.choices[0].message.content
 
-        # Extraer JSON del texto generado
-        m = re.search(r"\{.*\}", content, re.S)
-        if m:
-            parsed = json.loads(m.group(0))
-        else:
-            parsed = {"steps":[], "actors":[], "inputs":[], "outputs":[], "pains":[content]}
+    # Extraer JSON
+    m = re.search(r"\{.*\}", content, re.S)
+    if m:
+        parsed = json.loads(m.group(0))
+    else:
+        parsed = {"steps":[], "actors":[], "inputs":[], "outputs":[], "pains":[content]}
 
-        # Generar diagrama Mermaid
-        steps = parsed.get("steps", [])
-        mermaid = ["flowchart TD"]
-        for i, s in enumerate(steps):
-            node = f"A{i}"
-            mermaid.append(f'    {node}["{s}"]')
-            if i > 0:
-                mermaid.append(f'    A{i-1} --> {node}')
-        mermaid_code = "\n".join(mermaid)
+    # Generar Mermaid
+    steps = parsed.get("steps", [])
+    mermaid = ["flowchart TD"]
+    for i, s in enumerate(steps):
+        node = f"A{i}"
+        mermaid.append(f'    {node}["{s}"]')
+        if i > 0:
+            mermaid.append(f'    A{i-1} --> {node}')
+    mermaid_code = "\n".join(mermaid)
 
-    # Mostrar resultados
-    st.subheader("Resumen estructurado")
-    st.json(parsed)
+    return parsed, mermaid_code
 
-    st.subheader("Diagrama Mermaid")
-    st.markdown("```mermaid\n" + mermaid_code + "\n```")
+if st.button("Generar mapa"):
+    if not input_text.strip():
+        st.warning("Pega algo de texto primero.")
+        st.stop()
 
-    # Exportar PDF simple
-    if st.button("Exportar PDF (simple)"):
-        buffer = io.BytesIO()
-        c = canvas.Canvas(buffer, pagesize=A4)
-        text = c.beginText(40, 800)
-        text.setFont("Helvetica", 10)
-        text.textLine("AI Workshop Assistant - Export")
-        text.textLine("")
-        text.textLine("Resumen:")
-        c.drawText(text)
-        c.drawString(40, 760, str(parsed))
-        c.showPage()
-        c.save()
-        buffer.seek(0)
-        b64 = base64.b64encode(buffer.read()).decode()
-        href = f'<a href="data:application/octet-stream;base64,{b64}" download="workshop_export.pdf">Descargar PDF</a>'
-        st.markdown(href, unsafe_allow_html=True)
+    with st.spinner("Generando..."):
+        resumen, mermaid = generar_resumen_y_diagrama(input_text)
+
+    if resumen:
+        st.subheader("Resumen JSON")
+        st.json(resumen)
+
+        st.subheader("Diagrama Mermaid")
+        st.markdown("```mermaid\n" + mermaid + "\n```")
+
+        # Botón para exportar PDF simple
+        if st.button("Exportar PDF"):
+            buffer = io.BytesIO()
+            c = canvas.Canvas(buffer, pagesize=A4)
+            text_obj = c.beginText(40, 800)
+            text_obj.setFont("Helvetica", 10)
+            text_obj.textLine("AI Workshop Assistant - Export")
+            text_obj.textLine("")
+            text_obj.textLine("Resumen:")
+            c.drawText(text_obj)
+            c.drawString(40, 760, str(resumen))
+            c.showPage()
+            c.save()
+            buffer.seek(0)
+            b64 = base64.b64encode(buffer.read()).decode()
+            href = f'<a href="data:application/octet-stream;base64,{b64}" download="workshop_export.pdf">Descargar PDF</a>'
+            st.markdown(href, unsafe_allow_html=True)
