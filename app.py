@@ -1,115 +1,168 @@
 import streamlit as st
 from openai import OpenAI
+import pandas as pd
 import json
-import re
-from textwrap import dedent
 import io
-import base64
+from pyvis.network import Network
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
-# Configuración de la página
-st.set_page_config(page_title="AI Workshop Assistant", layout="wide")
-st.title("AI Workshop Assistant — Generador de mapas (Mermaid)")
+# ========================================
+# CONFIGURACIÓN INICIAL
+# ========================================
+st.set_page_config(
+    page_title="AI Workshop Assistant PRO+",
+    page_icon="🧭",
+    layout="wide",
+)
 
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+st.title("🧭 AI Workshop Assistant PRO+")
 st.markdown("""
-Pega aquí la transcripción o descripción de tu workshop.  
-La herramienta generará un **diagrama Mermaid** y un **resumen estructurado**.
+Convierte descripciones de workshops o procesos complejos en **mapas interactivos, insights estructurados, KPIs y reportes profesionales.**
 """)
 
-# ===== Configuración =====
-USE_MOCK = False  # Cambia a False cuando tengas crédito
-if not USE_MOCK:
-    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# ========================================
+# INPUT DE TEXTO
+# ========================================
+text = st.text_area(
+    "📋 Pega aquí la transcripción o descripción del workshop:",
+    placeholder="Ejemplo: En la planta de producción tenemos 4 líneas, una de mezclado, una de empaquetado...",
+    height=200
+)
 
-# Área de texto
-input_text = st.text_area("Transcripción / Descripción", height=250)
+# ========================================
+# BOTÓN PRINCIPAL
+# ========================================
+if st.button("🚀 Analizar Workshop"):
+    with st.spinner("Analizando con IA... ⏳"):
+        prompt = f"""
+        Eres un consultor experto en transformación de procesos empresariales.
+        A partir del siguiente texto, identifica:
+        - Los pasos principales del proceso
+        - Los actores involucrados
+        - Los inputs, outputs y pain points
+        - Los KPIs relevantes
+        - Un resumen ejecutivo
+        Devuelve un JSON estructurado con:
+        steps[], actors[], inputs[], outputs[], pains[], kpis[], summary
+        Texto: {text}
+        """
 
-# ===== Función principal =====
-def generar_resumen_y_diagrama(texto):
-    if USE_MOCK:
-        # Respuesta simulada para pruebas
-        parsed = {
-            "steps": ["Inicio", "Compras de materiales", "Producción", "Control de calidad", "Entrega"],
-            "actors": ["Gerente", "Departamento de Compras", "Supervisor de Producción", "Calidad", "Logística"],
-            "inputs": ["Solicitudes", "Materiales"],
-            "outputs": ["Producto terminado"],
-            "pains": ["Retrasos en compras", "Fallas en producción"]
-        }
-        mermaid_code = dedent("""
-        flowchart TD
-            A0["Inicio"] --> A1["Compras de materiales"]
-            A1 --> A2["Producción"]
-            A2 --> A3["Control de calidad"]
-            A3 --> A4["Entrega"]
-        """).strip()
-        return parsed, mermaid_code
+        try:
+            response = client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[
+                    {"role": "system", "content": "Eres un experto en optimización de procesos."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            data = response.choices[0].message.content.strip()
 
-    # Código real de OpenAI
-    prompt = dedent(f"""
-    Eres un asistente experto en mapear procesos. Extrae pasos, actores, inputs, outputs y pain points del texto:
-    \"\"\"{texto}\"\"\"
-    Devuelve JSON con claves: steps, actors, inputs, outputs, pains
-    """)
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=[
-                {"role": "system", "content": "Eres un experto en procesos de negocio."},
-                {"role": "user", "content": prompt}
-            ],
-          
-        )
-    except Exception as e:
-        st.warning(f"Error en la API de OpenAI: {e}")
-        return None, None
+            # Limpieza de JSON
+            try:
+                result = json.loads(data)
+            except json.JSONDecodeError:
+                st.warning("El resultado no es JSON puro, intentando limpiar...")
+                cleaned = data[data.find("{"):data.rfind("}") + 1]
+                result = json.loads(cleaned)
 
-    content = resp.choices[0].message.content
-    m = re.search(r"\{.*\}", content, re.S)
-    parsed = json.loads(m.group(0)) if m else {"steps":[], "actors":[], "inputs":[], "outputs":[], "pains":[content]}
+            st.success("✅ Análisis completado correctamente")
 
-    # Mermaid
-    steps = parsed.get("steps", [])
-    mermaid = ["flowchart TD"]
-    for i, s in enumerate(steps):
-        node = f"A{i}"
-        mermaid.append(f'    {node}["{s}"]')
-        if i > 0:
-            mermaid.append(f'    A{i-1} --> {node}')
-    mermaid_code = "\n".join(mermaid)
+            # ========================================
+            # TABS DEL DASHBOARD
+            # ========================================
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+                "🗺️ Mapa Visual",
+                "📋 Tablas",
+                "📈 KPIs",
+                "💡 Insights",
+                "🔥 Pain Points (Heatmap)",
+                "📦 Exportar"
+            ])
 
-    return parsed, mermaid_code
+            # --- TAB 1: VISUAL MAP ---
+            with tab1:
+                st.subheader("🗺️ Mapa Interactivo del Proceso")
+                net = Network(height="600px", width="100%", bgcolor="#222222", font_color="white")
+                steps = result.get("steps", [])
+                for i, step in enumerate(steps):
+                    name = step.get("name", f"Paso {i+1}")
+                    actor = step.get("actor", "Desconocido")
+                    net.add_node(i, label=f"{name}\n({actor})", title=step.get("description", ""))
+                    if i > 0:
+                        net.add_edge(i - 1, i)
+                net.save_graph("/mount/src/ai-workshop-assistant/process_map.html")
+                st.components.v1.html(open("/mount/src/ai-workshop-assistant/process_map.html").read(), height=600)
 
-# ===== Botón de generación =====
-if st.button("Generar mapa"):
-    if not input_text.strip():
-        st.warning("Pega algo de texto primero.")
-        st.stop()
+            # --- TAB 2: TABLAS ---
+            with tab2:
+                st.subheader("📋 Pasos del Proceso")
+                st.dataframe(pd.DataFrame(result.get("steps", [])))
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.subheader("🎭 Actores")
+                    st.dataframe(pd.DataFrame(result.get("actors", []), columns=["Actor"]))
+                with col2:
+                    st.subheader("⚙️ Inputs / Outputs")
+                    st.dataframe(pd.DataFrame({
+                        "Inputs": result.get("inputs", []),
+                        "Outputs": result.get("outputs", [])
+                    }))
 
-    with st.spinner("Generando..."):
-        resumen, mermaid = generar_resumen_y_diagrama(input_text)
+            # --- TAB 3: KPIs ---
+            with tab3:
+                st.subheader("📈 Indicadores Clave (KPIs)")
+                kpis = result.get("kpis", [])
+                if kpis:
+                    st.dataframe(pd.DataFrame(kpis, columns=["KPI"]))
+                else:
+                    st.info("No se detectaron KPIs. Añade datos de rendimiento o tiempos al texto para detectarlos.")
 
-    if resumen:
-        st.subheader("Resumen JSON")
-        st.json(resumen)
+            # --- TAB 4: INSIGHTS ---
+            with tab4:
+                st.subheader("💡 Resumen Ejecutivo")
+                st.write(result.get("summary", "Sin resumen disponible."))
+                st.markdown("**Recomendaciones:** Usa los pain points y KPIs para planificar acciones de mejora.")
 
-        st.subheader("Diagrama Mermaid")
-        st.markdown("```mermaid\n" + mermaid + "\n```")
+            # --- TAB 5: HEATMAP DE PAINS ---
+            with tab5:
+                st.subheader("🔥 Pain Points Detectados")
+                pains = result.get("pains", [])
+                if pains:
+                    df_pains = pd.DataFrame(pains, columns=["Pain Point"])
+                    st.dataframe(df_pains.style.background_gradient(cmap="Reds"))
+                else:
+                    st.info("No se detectaron pain points significativos.")
 
-        # Botón para exportar PDF simple
-        if st.button("Exportar PDF"):
-            buffer = io.BytesIO()
-            c = canvas.Canvas(buffer, pagesize=A4)
-            text_obj = c.beginText(40, 800)
-            text_obj.setFont("Helvetica", 10)
-            text_obj.textLine("AI Workshop Assistant - Export")
-            text_obj.textLine("")
-            text_obj.textLine("Resumen:")
-            c.drawText(text_obj)
-            c.drawString(40, 760, str(resumen))
-            c.showPage()
-            c.save()
-            buffer.seek(0)
-            b64 = base64.b64encode(buffer.read()).decode()
-            href = f'<a href="data:application/octet-stream;base64,{b64}" download="workshop_export.pdf">Descargar PDF</a>'
-            st.markdown(href, unsafe_allow_html=True)
+            # --- TAB 6: EXPORTAR ---
+            with tab6:
+                st.subheader("📦 Exportar Resultados")
+
+                # JSON
+                json_data = json.dumps(result, indent=4)
+                st.download_button("💾 Descargar JSON", json_data, "analysis.json")
+
+                # CSV
+                csv_data = pd.DataFrame(result.get("steps", [])).to_csv(index=False)
+                st.download_button("📊 Descargar CSV", csv_data, "steps.csv")
+
+                # PDF
+                if st.button("🧾 Generar PDF Profesional"):
+                    buffer = io.BytesIO()
+                    doc = SimpleDocTemplate(buffer, pagesize=A4)
+                    styles = getSampleStyleSheet()
+                    story = [Paragraph("AI Workshop Assistant Report", styles["Title"]), Spacer(1, 12)]
+                    story.append(Paragraph("Resumen Ejecutivo:", styles["Heading2"]))
+                    story.append(Paragraph(result.get("summary", ""), styles["Normal"]))
+                    story.append(Spacer(1, 12))
+                    story.append(Paragraph("Pain Points:", styles["Heading2"]))
+                    for p in result.get("pains", []):
+                        story.append(Paragraph(f"- {p}", styles["Normal"]))
+                    doc.build(story)
+                    st.download_button("📥 Descargar PDF", buffer.getvalue(), "workshop_report.pdf")
+
+        except Exception as e:
+            st.error(f"Error en el análisis o conexión con la API: {e}")
