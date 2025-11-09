@@ -1,10 +1,7 @@
 import streamlit as st
 from openai import OpenAI
 import pandas as pd
-from graphviz import Digraph
 import json
-import tempfile
-import os
 
 # ==========================================
 # CONFIGURACIÓN BÁSICA
@@ -28,6 +25,47 @@ input_text = st.text_area(
     placeholder="Ejemplo: El cliente hace un pedido, verificamos si hay stock disponible..."
 )
 
+# ==========================================
+# FUNCIÓN AUXILIAR
+# ==========================================
+def generate_mermaid(steps):
+    """Genera un diagrama Mermaid estilo BPM."""
+    mermaid = ["flowchart LR"]
+    for i, step in enumerate(steps):
+        name = step.get("name", f"Step {i+1}")
+        node_type = step.get("type", "task")
+        actor = step.get("actor", "")
+
+        label = name
+        if actor:
+            label += f"\\n👤 {actor}"
+
+        # Colores y formas BPMN-like
+        if node_type == "start":
+            mermaid.append(f'    A{i}(["{label}"]):::start')
+        elif node_type == "end":
+            mermaid.append(f'    A{i}(["{label}"]):::end')
+        elif node_type == "decision":
+            mermaid.append(f'    A{i}{{"{label}"}}:::decision')
+        else:
+            mermaid.append(f'    A{i}["{label}"]:::task')
+
+        if i > 0:
+            mermaid.append(f"    A{i-1} --> A{i}")
+
+    # Estilos CSS en Mermaid
+    mermaid.append("""
+    classDef start fill:#4CAF50,color:#fff;
+    classDef end fill:#37474F,color:#fff;
+    classDef decision fill:#FFB74D,color:#000,stroke:#E65100;
+    classDef task fill:#90CAF9,color:#000,stroke:#1565C0;
+    """)
+
+    return "\n".join(mermaid)
+
+# ==========================================
+# ANÁLISIS IA
+# ==========================================
 if st.button("🚀 Analizar y generar mapa"):
     if not input_text.strip():
         st.warning("Por favor ingresa una descripción del proceso.")
@@ -40,8 +78,7 @@ if st.button("🚀 Analizar y generar mapa"):
                 messages=[
                     {"role": "system", "content": """
 Eres un experto en modelado de procesos empresariales (BPMN). 
-Analiza la descripción y devuelve un JSON **simple** con la siguiente estructura:
-
+Analiza la descripción y devuelve un JSON simple con:
 {
  "steps": [
    {"name": "Customer places order", "type": "task", "actor": "Customer"},
@@ -51,7 +88,7 @@ Analiza la descripción y devuelve un JSON **simple** con la siguiente estructur
    {"name": "End", "type": "end"}
  ],
  "actors": ["Customer", "Sales", "Logistics"],
- "pains": ["Delays in stock availability", "Customer cancellations", "Payment errors"]
+ "pains": ["Delays in stock availability", "Customer cancellations"]
 }
                     """},
                     {"role": "user", "content": input_text},
@@ -60,7 +97,6 @@ Analiza la descripción y devuelve un JSON **simple** con la siguiente estructur
 
             ai_output = response.choices[0].message.content.strip()
 
-            # Intentar convertir a JSON
             try:
                 data = json.loads(ai_output)
             except json.JSONDecodeError:
@@ -73,43 +109,18 @@ Analiza la descripción y devuelve un JSON **simple** con la siguiente estructur
                 actors = data.get("actors", [])
                 pains = data.get("pains", [])
 
-                tabs = st.tabs(["🗺️ Mapa BPMN", "📋 Detalle", "👥 Stakeholders", "⚠️ Pain Points"])
+                tabs = st.tabs(["🗺️ Mapa BPMN", "📋 Estructura", "👥 Stakeholders", "⚠️ Pain Points"])
 
                 # ==========================================
-                # 🗺️ MAPA BPMN
+                # 🗺️ MAPA BPMN (MERMAID)
                 # ==========================================
                 with tabs[0]:
-                    dot = Digraph(format="svg")
-                    dot.attr(rankdir="LR", size="10,5")
-
-                    for step in steps:
-                        node_type = step.get("type", "task")
-                        label = step.get("name", "")
-                        actor = step.get("actor", "")
-
-                        if actor:
-                            label += f"\n👤 {actor}"
-
-                        if node_type == "start":
-                            dot.node(label, shape="ellipse", style="filled", fillcolor="#4CAF50")
-                        elif node_type == "end":
-                            dot.node(label, shape="ellipse", style="filled", fillcolor="#37474F", fontcolor="white")
-                        elif node_type == "decision":
-                            dot.node(label, shape="diamond", style="filled", fillcolor="#FFB74D")
-                        else:  # task
-                            dot.node(label, shape="box", style="rounded,filled", fillcolor="#90CAF9")
-
-                    # Conectar pasos secuenciales
-                    for i in range(len(steps) - 1):
-                        dot.edge(steps[i]["name"], steps[i + 1]["name"])
-
-                    tmpfile = tempfile.NamedTemporaryFile(delete=False, suffix=".svg")
-                    dot.render(tmpfile.name, cleanup=True)
-                    st.image(tmpfile.name + ".svg")
-                    os.remove(tmpfile.name + ".svg")
+                    st.subheader("🗺️ Mapa de proceso estilo BPMN")
+                    mermaid_code = generate_mermaid(steps)
+                    st.markdown(f"```mermaid\n{mermaid_code}\n```")
 
                 # ==========================================
-                # 📋 DETALLE
+                # 📋 JSON SIMPLE
                 # ==========================================
                 with tabs[1]:
                     st.json(data)
@@ -130,7 +141,7 @@ Analiza la descripción y devuelve un JSON **simple** con la siguiente estructur
                     if pains:
                         st.dataframe(pd.DataFrame(pains, columns=["Pain Points"]))
                     else:
-                        st.info("No se detectaron problemas reportados.")
+                        st.info("No se detectaron problemas.")
 
         except Exception as e:
             st.error(f"Error durante el análisis: {e}")
