@@ -17,50 +17,58 @@ Pega aquí la transcripción o descripción de tu workshop.
 La herramienta generará un **diagrama Mermaid** y un **resumen estructurado**.
 """)
 
-# Conexión con OpenAI usando Secrets de Streamlit
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# ===== Configuración =====
+USE_MOCK = True  # Cambia a False cuando tengas crédito
+if not USE_MOCK:
+    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # Área de texto
 input_text = st.text_area("Transcripción / Descripción", height=250)
 
+# ===== Función principal =====
 def generar_resumen_y_diagrama(texto):
+    if USE_MOCK:
+        # Respuesta simulada para pruebas
+        parsed = {
+            "steps": ["Inicio", "Compras de materiales", "Producción", "Control de calidad", "Entrega"],
+            "actors": ["Gerente", "Departamento de Compras", "Supervisor de Producción", "Calidad", "Logística"],
+            "inputs": ["Solicitudes", "Materiales"],
+            "outputs": ["Producto terminado"],
+            "pains": ["Retrasos en compras", "Fallas en producción"]
+        }
+        mermaid_code = dedent("""
+        flowchart TD
+            A0["Inicio"] --> A1["Compras de materiales"]
+            A1 --> A2["Producción"]
+            A2 --> A3["Control de calidad"]
+            A3 --> A4["Entrega"]
+        """).strip()
+        return parsed, mermaid_code
+
+    # Código real de OpenAI
     prompt = dedent(f"""
-    Eres un asistente experto en mapear procesos. Extrae:
-    1) Lista de pasos secuenciales (ordenados)
-    2) Actores/roles principales
-    3) Entradas y salidas
-    4) Pain points/observaciones
-
-    Devuelve todo en JSON con claves:
-    steps (lista), actors (lista), inputs (lista), outputs (lista), pains (lista)
-
-    TEXT:
+    Eres un asistente experto en mapear procesos. Extrae pasos, actores, inputs, outputs y pain points del texto:
     \"\"\"{texto}\"\"\"
+    Devuelve JSON con claves: steps, actors, inputs, outputs, pains
     """)
-
     try:
         resp = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[
-                {"role":"system","content":"Eres un experto en procesos de negocio."},
-                {"role":"user","content": prompt}
+                {"role": "system", "content": "Eres un experto en procesos de negocio."},
+                {"role": "user", "content": prompt}
             ],
             temperature=0.0,
         )
-    except Exception as e:  # Captura cualquier error de la API
+    except Exception as e:
         st.warning(f"Error en la API de OpenAI: {e}")
         return None, None
 
     content = resp.choices[0].message.content
-
-    # Extraer JSON
     m = re.search(r"\{.*\}", content, re.S)
-    if m:
-        parsed = json.loads(m.group(0))
-    else:
-        parsed = {"steps":[], "actors":[], "inputs":[], "outputs":[], "pains":[content]}
+    parsed = json.loads(m.group(0)) if m else {"steps":[], "actors":[], "inputs":[], "outputs":[], "pains":[content]}
 
-    # Generar Mermaid
+    # Mermaid
     steps = parsed.get("steps", [])
     mermaid = ["flowchart TD"]
     for i, s in enumerate(steps):
@@ -72,6 +80,7 @@ def generar_resumen_y_diagrama(texto):
 
     return parsed, mermaid_code
 
+# ===== Botón de generación =====
 if st.button("Generar mapa"):
     if not input_text.strip():
         st.warning("Pega algo de texto primero.")
