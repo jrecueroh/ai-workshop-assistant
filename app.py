@@ -122,7 +122,7 @@ Devuelve SOLO un JSON válido con esta estructura:
   },
   "process": {
     "steps": [
-      {"name": "Nombre del paso", "description": "Descripción breve", "actor": "Rol principal", "department": "Departamento funcional", "type": "start|task|decision|end", "options": [{"label": "Sí", "next": "Nombre del siguiente paso"}]}
+      {"name": "Nombre del paso", "description": "Descripción breve", "actor": "Rol principal", "department": "Departamento funcional", "type": "start|task|decision|end"}
     ],
     "departments": ["Manufacturing", "Quality", "Finance"],
     "actors": ["Planner", "Operator"],
@@ -147,7 +147,7 @@ Return ONLY a valid JSON with this structure:
   },
   "process": {
     "steps": [
-      {"name": "Step name", "description": "Short description", "actor": "Main role", "department": "Functional department", "type": "start|task|decision|end", "options": [{"label": "Yes", "next": "Next step name"}]}
+      {"name": "Step name", "description": "Short description", "actor": "Main role", "department": "Functional department", "type": "start|task|decision|end"}
     ],
     "departments": ["Manufacturing", "Quality", "Finance"],
     "actors": ["Planner", "Operator"],
@@ -162,7 +162,6 @@ Return ONLY a valid JSON with this structure:
 # ==============================
 def call_openai_json(system_prompt, user_text):
     try:
-        # Primer intento con modelo rápido y barato
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -174,14 +173,12 @@ def call_openai_json(system_prompt, user_text):
             timeout=40,
         )
         content = resp.choices[0].message.content.strip()
-
     except Exception as e:
         st.warning(f"⚠️ Error con gpt-4o-mini ({e}), usando gpt-3.5-turbo.")
-        # Fallback automático
         resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": system_prompt + "\n\n⚠️ Devuelve solo JSON, breve y sin explicaciones."},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_text[:4000]},
             ],
             temperature=0.3,
@@ -189,12 +186,10 @@ def call_openai_json(system_prompt, user_text):
         )
         content = resp.choices[0].message.content.strip()
 
-    # Buscar JSON válido
     match = re.search(r"\{.*\}", content, re.S)
     if match:
-        json_text = match.group(0)
         try:
-            return json.loads(json_text)
+            return json.loads(match.group(0))
         except json.JSONDecodeError:
             st.error("⚠️ JSON inválido recibido de la IA.")
             return {}
@@ -235,32 +230,35 @@ def draw_swimlane(steps):
     fig.update_layout(height=max(400, len(depts)*150), plot_bgcolor="white")
     return fig
 
-
+# === CORREGIDA Y MEJORADA ===
 def draw_org(nodes):
     if not nodes:
         return None
     fig = go.Figure()
-    lvls = defaultdict(list)
+    levels = defaultdict(list)
     for n in nodes:
         parent = n.get("parent")
         lvl = 0 if not parent else 1
-        lvls[lvl].append(n)
+        levels[lvl].append(n)
     pos = {}
-    for lvl, arr in lvls.items():
+    color_map = {"group": "#D1C4E9", "company": "#BBDEFB", "plant": "#C8E6C9", "department": "#FFF9C4", "team": "#FFE0B2"}
+    for lvl, arr in levels.items():
         for i, n in enumerate(arr):
             x, y = i*3, -lvl*3
+            color = color_map.get(n.get("type", ""), "#E0E0E0")
             fig.add_shape(type="rect", x0=x, y0=y-0.6, x1=x+2.4, y1=y+0.6,
-                          fillcolor="#E3F2FD", line=dict(color="#333", width=1))
+                          fillcolor=color, line=dict(color="#333", width=1))
             fig.add_annotation(x=x+1.2, y=y, text=n["name"], showarrow=False)
             pos[n["name"]] = (x+1.2, y)
     for n in nodes:
         p = n.get("parent")
         if p and p in pos:
-            x0, y0 = pos[p]; x1, y1 = pos[n["name"]]
+            x0, y0 = pos[p]
+            x1, y1 = pos[n["name"]]
             fig.add_annotation(x=x1, y=y1+0.6, ax=x0, ay=y0-0.6, showarrow=True, arrowcolor="gray")
     fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible(False)
-    fig.update_layout(height=max(400, len(lvls)*200), plot_bgcolor="white")
+    fig.update_yaxes(visible=False)
+    fig.update_layout(height=max(400, len(levels)*200), plot_bgcolor="white")
     return fig
 
 # ==============================
@@ -311,8 +309,7 @@ if "company_data" in st.session_state:
 
     with tabs[4]:
         if recs:
-            df = pd.DataFrame(recs)
-            st.dataframe(df)
+            st.dataframe(pd.DataFrame(recs))
         else:
             st.info(TXT["no_data"])
 
