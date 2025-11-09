@@ -13,48 +13,43 @@ from collections import defaultdict
 st.set_page_config(page_title="AI Workshop Assistant PRO", layout="wide")
 
 # ==============================
-# ESTILO CSS (bandera)
+# ESTILO CSS
 # ==============================
 st.markdown("""
     <style>
-    .lang-flag {
-        font-size: 28px;
-        cursor: pointer;
-        position: fixed;
-        top: 20px;
-        right: 30px;
-        z-index: 1000;
-        transition: transform 0.2s ease;
+    div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
+        text-align: right;
     }
-    .lang-flag:hover {
-        transform: scale(1.1);
+    button[role="button"] {
+        border-radius: 12px !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================
-# GESTIÓN DE IDIOMA
+# ESTADO DE IDIOMA
 # ==============================
 if "lang" not in st.session_state:
     st.session_state.lang = "es"
 
-query_params = st.query_params
-if "lang" in query_params:
-    st.session_state.lang = query_params["lang"]
+# ==============================
+# TOP BAR CON BANDERA
+# ==============================
+col1, col2 = st.columns([6, 1])
+with col1:
+    st.markdown("## 🧩 AI Workshop Assistant PRO")
+with col2:
+    if st.session_state.lang == "es":
+        if st.button("🇬🇧"):
+            st.session_state.lang = "en"
+            st.rerun()
+    else:
+        if st.button("🇪🇸"):
+            st.session_state.lang = "es"
+            st.rerun()
 
 current_lang = st.session_state.lang
-current_flag = "🇪🇸" if current_lang == "es" else "🇬🇧"
-next_lang = "en" if current_lang == "es" else "es"
-next_flag = "🇬🇧" if current_lang == "es" else "🇪🇸"
 
-tooltip = "Switch to English" if current_lang == "es" else "Cambiar a Español"
-
-st.markdown(
-    f"""
-    <a href="?lang={next_lang}" class="lang-flag" title="{tooltip}">{next_flag}</a>
-    """,
-    unsafe_allow_html=True,
-)
 
 # ==============================
 # TEXTOS
