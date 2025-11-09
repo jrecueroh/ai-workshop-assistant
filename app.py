@@ -3,6 +3,7 @@ from openai import OpenAI
 import pandas as pd
 import json
 import re
+import html
 
 # ==============================
 # CONFIGURACIÓN
@@ -20,17 +21,21 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # ==============================
 # LIMPIEZA DE TEXTO
 # ==============================
-def clean_label(text):
-    """Limpia texto para Mermaid (sin comillas, emojis o símbolos conflictivos)."""
+def clean_label(text: str) -> str:
+    """Limpia texto para Mermaid (sin saltos, acentos ni emojis)."""
     if not text:
         return ""
-    text = re.sub(r"[\"'{}<>#|]", "", text)  # quitar caracteres ilegales
-    text = text.replace("\\n", " ").replace("\n", " ")
+    text = html.escape(text)  # escapamos HTML
+    text = re.sub(r"[\"'{}<>#|]", "", text)
+    text = re.sub(r"[\n\r\t]", " ", text)
     text = re.sub(r"\s+", " ", text)
+    # sustituir caracteres latinos extendidos por versiones ASCII seguras
+    trans = str.maketrans("áéíóúÁÉÍÓÚñÑ", "aeiouAEIOUnN")
+    text = text.translate(trans)
     return text.strip()
 
 # ==============================
-# GENERAR DIAGRAMA MERMAID
+# GENERADOR DE MERMAID
 # ==============================
 def generate_mermaid(steps):
     mermaid = ["flowchart LR"]
@@ -43,7 +48,6 @@ def generate_mermaid(steps):
         if actor:
             label += f" ({actor})"
 
-        # Asignar forma y color
         if node_type == "start":
             mermaid.append(f'    A{i}(["{label}"]):::start')
         elif node_type == "end":
@@ -56,7 +60,6 @@ def generate_mermaid(steps):
         if i > 0:
             mermaid.append(f"    A{i-1} --> A{i}")
 
-    # Añadir estilos
     mermaid.append("""
     classDef start fill:#4CAF50,color:#fff;
     classDef end fill:#37474F,color:#fff;
@@ -66,7 +69,7 @@ def generate_mermaid(steps):
     return "\n".join(mermaid)
 
 # ==============================
-# INTERFAZ
+# INTERFAZ PRINCIPAL
 # ==============================
 input_text = st.text_area(
     "✏️ Pega la descripción del proceso",
@@ -85,17 +88,16 @@ if st.button("🚀 Analizar y generar mapa"):
                 model="gpt-5-mini",
                 messages=[
                     {"role": "system", "content": """
-Eres un experto en modelado de procesos BPMN. 
-Devuelve un JSON con formato simple:
+Eres un experto en modelado BPMN. Devuelve JSON simple con:
 {
  "steps": [
    {"name": "Inicio", "type": "start"},
    {"name": "Verificar stock", "type": "decision"},
    {"name": "Procesar pago", "type": "task", "actor": "Ventas"},
-   {"name": "Entregar producto", "type": "task", "actor": "Logística"},
+   {"name": "Entregar producto", "type": "task", "actor": "Logistica"},
    {"name": "Fin", "type": "end"}
  ],
- "actors": ["Ventas", "Logística"],
+ "actors": ["Ventas", "Logistica"],
  "pains": ["Errores en inventario", "Retrasos en entrega"]
 }
                     """},
@@ -104,8 +106,6 @@ Devuelve un JSON con formato simple:
             )
 
             ai_output = response.choices[0].message.content.strip()
-
-            # Intentar parsear JSON
             try:
                 data = json.loads(ai_output)
             except Exception:
@@ -128,13 +128,7 @@ Devuelve un JSON con formato simple:
             with tabs[0]:
                 st.subheader("🧩 Mapa visual del proceso")
                 mermaid_code = generate_mermaid(steps)
-
-                # Validar sintaxis Mermaid (no debería fallar)
-                if "flowchart" not in mermaid_code:
-                    st.error("El código Mermaid parece inválido. Verifica los datos generados.")
-                    st.code(mermaid_code)
-                else:
-                    # Renderizar en HTML con mermaid.js
+                try:
                     st.components.v1.html(
                         f"""
                         <div class="mermaid">
@@ -147,6 +141,9 @@ Devuelve un JSON con formato simple:
                         """,
                         height=700,
                     )
+                except Exception as e:
+                    st.error(f"❌ Error al renderizar Mermaid: {e}")
+                    st.code(mermaid_code)
 
             # ==============================
             # 📋 JSON
@@ -174,4 +171,3 @@ Devuelve un JSON con formato simple:
 
         except Exception as e:
             st.error(f"Error durante el análisis: {e}")
-
