@@ -1,6 +1,5 @@
 import streamlit as st
 from openai import OpenAI
-from openai.error import RateLimitError
 import json
 import re
 from textwrap import dedent
@@ -48,8 +47,8 @@ def generar_resumen_y_diagrama(texto):
             ],
             temperature=0.0,
         )
-    except RateLimitError:
-        st.warning("Demasiadas solicitudes a la API. Espera 10 segundos y prueba de nuevo.")
+    except Exception as e:  # Captura cualquier error de la API
+        st.warning(f"Error en la API de OpenAI: {e}")
         return None, None
 
     content = resp.choices[0].message.content
