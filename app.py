@@ -2,9 +2,10 @@ import streamlit as st
 from openai import OpenAI
 import pandas as pd
 import json
+import re
 
 # ==========================================
-# CONFIGURACIÓN BÁSICA
+# CONFIGURACIÓN
 # ==========================================
 st.set_page_config(page_title="AI Workshop Assistant — BPM Visualizer", layout="wide")
 st.title("🧩 AI Workshop Assistant — Business Process Visualizer")
@@ -17,30 +18,30 @@ junto con una estructura organizada y stakeholders identificados automáticament
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ==========================================
-# ENTRADA DE USUARIO
+# LIMPIADOR DE TEXTO PARA MERMAID
 # ==========================================
-input_text = st.text_area(
-    "✏️ Pega la transcripción o descripción del proceso",
-    height=250,
-    placeholder="Ejemplo: El cliente hace un pedido, verificamos si hay stock disponible..."
-)
+def clean_label(text):
+    """Evita errores de sintaxis Mermaid escapando comillas y emojis."""
+    if not text:
+        return ""
+    text = re.sub(r'["{}<>#|]', '', text)  # quitar símbolos conflictivos
+    text = text.replace("\\n", " ").replace("\n", " ")
+    return text.strip()
 
 # ==========================================
-# FUNCIÓN AUXILIAR
+# FUNCIÓN PARA GENERAR DIAGRAMA MERMAID
 # ==========================================
 def generate_mermaid(steps):
-    """Genera el código Mermaid con estilos BPMN."""
     mermaid = ["flowchart LR"]
     for i, step in enumerate(steps):
-        name = step.get("name", f"Step {i+1}")
+        name = clean_label(step.get("name", f"Step {i+1}"))
         node_type = step.get("type", "task")
-        actor = step.get("actor", "")
+        actor = clean_label(step.get("actor", ""))
 
         label = name
         if actor:
-            label += f"\\n👤 {actor}"
+            label += f" ({actor})"
 
-        # Formas y colores BPMN
         if node_type == "start":
             mermaid.append(f'    A{i}(["{label}"]):::start')
         elif node_type == "end":
@@ -53,7 +54,6 @@ def generate_mermaid(steps):
         if i > 0:
             mermaid.append(f"    A{i-1} --> A{i}")
 
-    # Estilos de clases Mermaid (colores tipo BPMN)
     mermaid.append("""
     classDef start fill:#4CAF50,color:#fff;
     classDef end fill:#37474F,color:#fff;
@@ -62,10 +62,15 @@ def generate_mermaid(steps):
     """)
     return "\n".join(mermaid)
 
+# ==========================================
+# INTERFAZ PRINCIPAL
+# ==========================================
+input_text = st.text_area(
+    "✏️ Pega la transcripción o descripción del proceso",
+    height=250,
+    placeholder="Ejemplo: El cliente hace un pedido, verificamos si hay stock disponible..."
+)
 
-# ==========================================
-# ANÁLISIS DE IA
-# ==========================================
 if st.button("🚀 Analizar y generar mapa"):
     if not input_text.strip():
         st.warning("Por favor ingresa una descripción del proceso.")
@@ -77,19 +82,19 @@ if st.button("🚀 Analizar y generar mapa"):
                 model="gpt-5-mini",
                 messages=[
                     {"role": "system", "content": """
-Eres un experto en modelado de procesos empresariales (BPMN). 
-Analiza la descripción y devuelve un JSON simple con esta estructura:
+Eres un experto en modelado de procesos (BPMN). 
+Analiza la descripción y devuelve un JSON simple con:
 {
  "steps": [
    {"name": "Inicio", "type": "start"},
    {"name": "Customer places order", "type": "task", "actor": "Customer"},
    {"name": "Product available?", "type": "decision"},
    {"name": "Process Payment", "type": "task", "actor": "Sales"},
-   {"name": "Prepare and Deliver order", "type": "task", "actor": "Logistics"},
-   {"name": "End", "type": "end"}
+   {"name": "Deliver order", "type": "task", "actor": "Logistics"},
+   {"name": "Fin", "type": "end"}
  ],
  "actors": ["Customer", "Sales", "Logistics"],
- "pains": ["Retrasos en validación de stock", "Errores en facturación", "Retrasos logísticos"]
+ "pains": ["Retrasos en validación de stock", "Errores en facturación"]
 }
                     """},
                     {"role": "user", "content": input_text},
@@ -98,7 +103,6 @@ Analiza la descripción y devuelve un JSON simple con esta estructura:
 
             ai_output = response.choices[0].message.content.strip()
 
-            # Intentar convertir a JSON
             try:
                 data = json.loads(ai_output)
             except json.JSONDecodeError:
@@ -114,10 +118,10 @@ Analiza la descripción y devuelve un JSON simple con esta estructura:
                 tabs = st.tabs(["🗺️ Mapa Visual BPM", "📋 Estructura JSON", "👥 Stakeholders", "⚠️ Pain Points"])
 
                 # ==========================================
-                # 🗺️ MAPA VISUAL BPM (RENDERIZADO)
+                # 🗺️ MAPA VISUAL RENDERIZADO (MERMAID)
                 # ==========================================
                 with tabs[0]:
-                    st.subheader("🧩 Mapa visual del proceso (estilo BPMN)")
+                    st.subheader("🧩 Mapa visual del proceso (BPMN)")
                     mermaid_code = generate_mermaid(steps)
                     st.components.v1.html(
                         f"""
@@ -126,7 +130,7 @@ Analiza la descripción y devuelve un JSON simple con esta estructura:
                         </div>
                         <script type="module">
                           import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-                          mermaid.initialize({{ startOnLoad: true, theme: "default" }});
+                          mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});
                         </script>
                         """,
                         height=700,
@@ -139,7 +143,7 @@ Analiza la descripción y devuelve un JSON simple con esta estructura:
                     st.json(data)
 
                 # ==========================================
-                # 👥 ACTORES
+                # 👥 STAKEHOLDERS
                 # ==========================================
                 with tabs[2]:
                     st.subheader("👥 Actores / Stakeholders")
