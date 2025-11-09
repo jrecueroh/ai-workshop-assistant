@@ -30,7 +30,7 @@ st.markdown("""
 # ESTADO DE IDIOMA
 # ==============================
 if "lang" not in st.session_state:
-    st.session_state.lang = "es"
+    st.session_state.lang = "es"  # Español por defecto
 
 # ==============================
 # TOP BAR CON BANDERA
@@ -40,23 +40,21 @@ with col1:
     st.markdown("## 🧩 AI Workshop Assistant PRO")
 with col2:
     if st.session_state.lang == "es":
-        if st.button("🇬🇧"):
+        if st.button("🇬🇧", help="Switch to English"):
             st.session_state.lang = "en"
             st.rerun()
     else:
-        if st.button("🇪🇸"):
+        if st.button("🇪🇸", help="Cambiar a Español"):
             st.session_state.lang = "es"
             st.rerun()
 
 current_lang = st.session_state.lang
-
 
 # ==============================
 # TEXTOS
 # ==============================
 TXT = {
     "es": {
-        "title": "🧩 AI Workshop Assistant PRO",
         "intro": "Analiza descripciones o transcripciones de workshops para generar **procesos y estructuras organizacionales** automáticamente.",
         "input_label": "✏️ Pega aquí la transcripción o descripción:",
         "input_ph": "Ejemplo: Tenemos un grupo con 4 subempresas, cada una con 2 plantas de manufactura...",
@@ -75,7 +73,6 @@ TXT = {
         "export_label": "⬇️ Descargar Excel con toda la información"
     },
     "en": {
-        "title": "🧩 AI Workshop Assistant PRO",
         "intro": "Analyze workshop descriptions or transcripts to automatically generate **processes and organizational structures**.",
         "input_label": "✏️ Paste the transcript or description here:",
         "input_ph": "Example: We have a group with 4 subsidiaries, each with 2 manufacturing plants...",
@@ -95,7 +92,6 @@ TXT = {
     }
 }[current_lang]
 
-st.title(TXT["title"])
 st.markdown(TXT["intro"])
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -162,32 +158,57 @@ Return ONLY a valid JSON with this structure:
 """
 
 # ==============================
-# FUNCIÓN IA
+# LLAMADA A LA IA (OPTIMIZADA)
 # ==============================
 def call_openai_json(system_prompt, user_text):
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text},
-        ],
-    )
-    content = resp.choices[0].message.content.strip()
     try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", content, re.S)
-        if m:
-            return json.loads(m.group(0))
-        else:
-            raise ValueError("La respuesta de la IA no contiene JSON válido.")
+        # Primer intento con modelo rápido y barato
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt + "\n\n⚠️ Devuelve solo JSON, breve y sin explicaciones."},
+                {"role": "user", "content": user_text[:4000]},
+            ],
+            temperature=0.3,
+            max_tokens=1200,
+            timeout=40,
+        )
+        content = resp.choices[0].message.content.strip()
+
+    except Exception as e:
+        st.warning(f"⚠️ Error con gpt-4o-mini ({e}), usando gpt-3.5-turbo.")
+        # Fallback automático
+        resp = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt + "\n\n⚠️ Devuelve solo JSON, breve y sin explicaciones."},
+                {"role": "user", "content": user_text[:4000]},
+            ],
+            temperature=0.3,
+            max_tokens=1200,
+        )
+        content = resp.choices[0].message.content.strip()
+
+    # Buscar JSON válido
+    match = re.search(r"\{.*\}", content, re.S)
+    if match:
+        json_text = match.group(0)
+        try:
+            return json.loads(json_text)
+        except json.JSONDecodeError:
+            st.error("⚠️ JSON inválido recibido de la IA.")
+            return {}
+    else:
+        st.error("⚠️ No se detectó JSON en la respuesta de la IA.")
+        return {}
 
 # ==============================
-# MAPAS
+# VISUALIZACIONES
 # ==============================
 def draw_swimlane(steps):
-    if not steps: return None
-    depts = list({s.get("department", "Other") for s in steps})
+    if not steps:
+        return None
+    depts = list({s.get("department", "Otro") for s in steps})
     dept_y = {d: -i * 2 for i, d in enumerate(depts)}
     fig = go.Figure()
     type_colors = {"start": "#4CAF50", "end": "#37474F", "decision": "#FFB74D", "task": "#90CAF9"}
@@ -197,7 +218,7 @@ def draw_swimlane(steps):
         fig.add_annotation(x=-1.5, y=y, text=f"<b>{d}</b>", showarrow=False, xanchor="right")
     pos = {}
     for i, s in enumerate(steps):
-        dept = s.get("department", "Other")
+        dept = s.get("department", "Otro")
         y = dept_y.get(dept, 0)
         color = type_colors.get(s.get("type", "task"), "#90CAF9")
         x0, x1 = i*2, i*2+1.5
@@ -214,8 +235,10 @@ def draw_swimlane(steps):
     fig.update_layout(height=max(400, len(depts)*150), plot_bgcolor="white")
     return fig
 
+
 def draw_org(nodes):
-    if not nodes: return None
+    if not nodes:
+        return None
     fig = go.Figure()
     lvls = defaultdict(list)
     for n in nodes:
@@ -236,12 +259,12 @@ def draw_org(nodes):
             x0, y0 = pos[p]; x1, y1 = pos[n["name"]]
             fig.add_annotation(x=x1, y=y1+0.6, ax=x0, ay=y0-0.6, showarrow=True, arrowcolor="gray")
     fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False)
+    fig.update_yaxes(visible(False)
     fig.update_layout(height=max(400, len(lvls)*200), plot_bgcolor="white")
     return fig
 
 # ==============================
-# PROCESAMIENTO
+# ANÁLISIS
 # ==============================
 if analyze:
     if not text.strip():
@@ -261,41 +284,39 @@ if "company_data" in st.session_state:
     steps = proc.get("steps", [])
     pains = proc.get("pains", [])
     recs = proc.get("recommendations", [])
-    actors = proc.get("actors", [])
-    depts = proc.get("departments", [])
     nodes = org.get("nodes", [])
     notes = org.get("notes", [])
 
-    t = st.tabs(TXT["tabs"])
+    tabs = st.tabs(TXT["tabs"])
 
-    with t[0]:
+    with tabs[0]:
         fig = draw_swimlane(steps)
         if fig: st.plotly_chart(fig, use_container_width=True)
         else: st.info(TXT["no_data"])
 
-    with t[1]:
+    with tabs[1]:
         st.json(proc)
         if steps: st.dataframe(pd.DataFrame(steps))
         if pains: st.dataframe(pd.DataFrame(pains, columns=["Pain Points"]))
 
-    with t[2]:
+    with tabs[2]:
         fig2 = draw_org(nodes)
         if fig2: st.plotly_chart(fig2, use_container_width=True)
         else: st.info(TXT["no_data"])
 
-    with t[3]:
+    with tabs[3]:
         st.json(org)
         if nodes: st.dataframe(pd.DataFrame(nodes))
         if notes: st.write(notes)
 
-    with t[4]:
+    with tabs[4]:
         if recs:
             df = pd.DataFrame(recs)
             st.dataframe(df)
         else:
             st.info(TXT["no_data"])
 
-    with t[5]:
+    with tabs[5]:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             pd.DataFrame(steps).to_excel(writer, sheet_name="Steps", index=False)
@@ -303,6 +324,9 @@ if "company_data" in st.session_state:
             pd.DataFrame(recs).to_excel(writer, sheet_name="Recs", index=False)
             pd.DataFrame(nodes).to_excel(writer, sheet_name="OrgNodes", index=False)
         buffer.seek(0)
-        st.download_button(label=TXT["export_label"], data=buffer,
-                           file_name="company_analysis.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(
+            label=TXT["export_label"],
+            data=buffer,
+            file_name="company_analysis.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
