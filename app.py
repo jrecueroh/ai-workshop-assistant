@@ -58,7 +58,7 @@ def generar_resumen_y_diagrama(texto):
                 {"role": "system", "content": "Eres un experto en procesos de negocio."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.0,
+          
         )
     except Exception as e:
         st.warning(f"Error en la API de OpenAI: {e}")
