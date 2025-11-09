@@ -13,54 +13,48 @@ from collections import defaultdict
 st.set_page_config(page_title="AI Workshop Assistant PRO", layout="wide")
 
 # ==============================
-# CONFIG VISUAL
+# ESTILO CSS (bandera)
 # ==============================
 st.markdown("""
     <style>
-    .flag {
+    .lang-flag {
         font-size: 28px;
         cursor: pointer;
-        margin-right: 15px;
+        position: fixed;
+        top: 20px;
+        right: 30px;
+        z-index: 1000;
+        transition: transform 0.2s ease;
     }
-    .flag:hover {
-        opacity: 0.7;
+    .lang-flag:hover {
+        transform: scale(1.1);
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================
-# IDIOMA
+# GESTIÓN DE IDIOMA
 # ==============================
 if "lang" not in st.session_state:
     st.session_state.lang = "es"
 
-col1, col2 = st.columns([0.1, 4])
-with col1:
-    if st.session_state.lang == "es":
-        if st.markdown('<span class="flag">🇪🇸</span>', unsafe_allow_html=True):
-            pass
-    else:
-        if st.markdown('<span class="flag">🇬🇧</span>', unsafe_allow_html=True):
-            pass
-with col2:
-    flag_clicked = st.markdown(
-        f"""
-        <div style="text-align:right;">
-            <span class="flag" onclick="window.location.reload()">{'🇬🇧' if st.session_state.lang=='es' else '🇪🇸'}</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+query_params = st.query_params
+if "lang" in query_params:
+    st.session_state.lang = query_params["lang"]
 
-lang_col1, lang_col2 = st.columns(2)
-with lang_col1:
-    if st.button("🇪🇸 Español"):
-        st.session_state.lang = "es"
-with lang_col2:
-    if st.button("🇬🇧 English"):
-        st.session_state.lang = "en"
+current_lang = st.session_state.lang
+current_flag = "🇪🇸" if current_lang == "es" else "🇬🇧"
+next_lang = "en" if current_lang == "es" else "es"
+next_flag = "🇬🇧" if current_lang == "es" else "🇪🇸"
 
-lang = st.session_state.lang
+tooltip = "Switch to English" if current_lang == "es" else "Cambiar a Español"
+
+st.markdown(
+    f"""
+    <a href="?lang={next_lang}" class="lang-flag" title="{tooltip}">{next_flag}</a>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ==============================
 # TEXTOS
@@ -75,12 +69,12 @@ TXT = {
         "spinner": "Analizando con IA...",
         "warn_no_text": "Por favor introduce texto para analizar.",
         "tabs": [
-            "🗺️ Process Map",
-            "🧩 Process Data",
-            "🏗️ Org Structure",
-            "📋 Org Data",
-            "💡 AI Recommendations",
-            "📤 Export"
+            "🗺️ Mapa de Procesos",
+            "🧩 Datos del Proceso",
+            "🏗️ Estructura Organizacional",
+            "📋 Datos Organizativos",
+            "💡 Recomendaciones IA",
+            "📤 Exportar"
         ],
         "no_data": "No se detectaron datos.",
         "export_label": "⬇️ Descargar Excel con toda la información"
@@ -96,7 +90,7 @@ TXT = {
         "tabs": [
             "🗺️ Process Map",
             "🧩 Process Data",
-            "🏗️ Org Structure",
+            "🏗️ Organizational Structure",
             "📋 Org Data",
             "💡 AI Recommendations",
             "📤 Export"
@@ -104,7 +98,7 @@ TXT = {
         "no_data": "No data detected.",
         "export_label": "⬇️ Download Excel with all information"
     }
-}[lang]
+}[current_lang]
 
 st.title(TXT["title"])
 st.markdown(TXT["intro"])
@@ -131,13 +125,13 @@ Devuelve SOLO un JSON válido con esta estructura:
 {
   "organization": {
     "nodes": [
-      {"name": "Nombre", "type": "group|company|plant|department|team|warehouse|site", "parent": "Nombre del padre o null"},
+      {"name": "Nombre", "type": "group|company|plant|department|team|warehouse|site", "parent": "Nombre del padre o null"}
     ],
     "notes": ["Comentarios breves sobre la estructura"]
   },
   "process": {
     "steps": [
-      {"name": "Nombre del paso", "description": "Descripción breve", "actor": "Rol principal", "department": "Departamento funcional", "type": "start|task|decision|end", "options": [{"label": "Sí", "next": "Nombre del siguiente paso"}]},
+      {"name": "Nombre del paso", "description": "Descripción breve", "actor": "Rol principal", "department": "Departamento funcional", "type": "start|task|decision|end", "options": [{"label": "Sí", "next": "Nombre del siguiente paso"}]}
     ],
     "departments": ["Manufacturing", "Quality", "Finance"],
     "actors": ["Planner", "Operator"],
@@ -156,13 +150,13 @@ Return ONLY a valid JSON with this structure:
 {
   "organization": {
     "nodes": [
-      {"name": "Name", "type": "group|company|plant|department|team|warehouse|site", "parent": "Parent name or null"},
+      {"name": "Name", "type": "group|company|plant|department|team|warehouse|site", "parent": "Parent name or null"}
     ],
     "notes": ["Short comments about the structure"]
   },
   "process": {
     "steps": [
-      {"name": "Step name", "description": "Short description", "actor": "Main role", "department": "Functional department", "type": "start|task|decision|end", "options": [{"label": "Yes", "next": "Next step name"}]},
+      {"name": "Step name", "description": "Short description", "actor": "Main role", "department": "Functional department", "type": "start|task|decision|end", "options": [{"label": "Yes", "next": "Next step name"}]}
     ],
     "departments": ["Manufacturing", "Quality", "Finance"],
     "actors": ["Planner", "Operator"],
@@ -173,7 +167,7 @@ Return ONLY a valid JSON with this structure:
 """
 
 # ==============================
-# LLAMADA A LA IA
+# FUNCIÓN IA
 # ==============================
 def call_openai_json(system_prompt, user_text):
     resp = client.chat.completions.create(
@@ -194,7 +188,7 @@ def call_openai_json(system_prompt, user_text):
             raise ValueError("La respuesta de la IA no contiene JSON válido.")
 
 # ==============================
-# VISUALIZACIÓN DE MAPAS
+# MAPAS
 # ==============================
 def draw_swimlane(steps):
     if not steps: return None
@@ -202,7 +196,6 @@ def draw_swimlane(steps):
     dept_y = {d: -i * 2 for i, d in enumerate(depts)}
     fig = go.Figure()
     type_colors = {"start": "#4CAF50", "end": "#37474F", "decision": "#FFB74D", "task": "#90CAF9"}
-    x = 0
     for d, y in dept_y.items():
         fig.add_shape(type="rect", x0=-1, y0=y-1, x1=len(steps)*2, y1=y+1,
                       fillcolor="#F9F9F9", line=dict(color="#DDD", width=1), layer="below")
@@ -221,7 +214,8 @@ def draw_swimlane(steps):
         x0, y0 = pos[steps[i]["name"]]
         x1, y1 = pos[steps[i+1]["name"]]
         fig.add_annotation(x=x1-0.8, y=y1, ax=x0+0.8, ay=y0, showarrow=True, arrowhead=3)
-    fig.update_xaxes(visible=False); fig.update_yaxes(visible=False)
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
     fig.update_layout(height=max(400, len(depts)*150), plot_bgcolor="white")
     return fig
 
@@ -231,7 +225,7 @@ def draw_org(nodes):
     lvls = defaultdict(list)
     for n in nodes:
         parent = n.get("parent")
-        lvl = 0 if parent in [None, "", "null"] else 1
+        lvl = 0 if not parent else 1
         lvls[lvl].append(n)
     pos = {}
     for lvl, arr in lvls.items():
@@ -246,7 +240,8 @@ def draw_org(nodes):
         if p and p in pos:
             x0, y0 = pos[p]; x1, y1 = pos[n["name"]]
             fig.add_annotation(x=x1, y=y1+0.6, ax=x0, ay=y0-0.6, showarrow=True, arrowcolor="gray")
-    fig.update_xaxes(visible=False); fig.update_yaxes(visible=False)
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
     fig.update_layout(height=max(400, len(lvls)*200), plot_bgcolor="white")
     return fig
 
@@ -258,7 +253,7 @@ if analyze:
         st.warning(TXT["warn_no_text"])
     else:
         with st.spinner(TXT["spinner"]):
-            data = call_openai_json(unified_prompt(lang), text)
+            data = call_openai_json(unified_prompt(current_lang), text)
             st.session_state.company_data = data
 
 # ==============================
