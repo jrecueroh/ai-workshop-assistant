@@ -17,7 +17,7 @@ junto con una estructura organizada y stakeholders identificados automáticament
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ==========================================
-# ENTRADA
+# ENTRADA DE USUARIO
 # ==========================================
 input_text = st.text_area(
     "✏️ Pega la transcripción o descripción del proceso",
@@ -29,7 +29,7 @@ input_text = st.text_area(
 # FUNCIÓN AUXILIAR
 # ==========================================
 def generate_mermaid(steps):
-    """Genera un diagrama Mermaid estilo BPM."""
+    """Genera el código Mermaid con estilos BPMN."""
     mermaid = ["flowchart LR"]
     for i, step in enumerate(steps):
         name = step.get("name", f"Step {i+1}")
@@ -40,7 +40,7 @@ def generate_mermaid(steps):
         if actor:
             label += f"\\n👤 {actor}"
 
-        # Colores y formas BPMN-like
+        # Formas y colores BPMN
         if node_type == "start":
             mermaid.append(f'    A{i}(["{label}"]):::start')
         elif node_type == "end":
@@ -53,18 +53,18 @@ def generate_mermaid(steps):
         if i > 0:
             mermaid.append(f"    A{i-1} --> A{i}")
 
-    # Estilos CSS en Mermaid
+    # Estilos de clases Mermaid (colores tipo BPMN)
     mermaid.append("""
     classDef start fill:#4CAF50,color:#fff;
     classDef end fill:#37474F,color:#fff;
     classDef decision fill:#FFB74D,color:#000,stroke:#E65100;
     classDef task fill:#90CAF9,color:#000,stroke:#1565C0;
     """)
-
     return "\n".join(mermaid)
 
+
 # ==========================================
-# ANÁLISIS IA
+# ANÁLISIS DE IA
 # ==========================================
 if st.button("🚀 Analizar y generar mapa"):
     if not input_text.strip():
@@ -78,17 +78,18 @@ if st.button("🚀 Analizar y generar mapa"):
                 messages=[
                     {"role": "system", "content": """
 Eres un experto en modelado de procesos empresariales (BPMN). 
-Analiza la descripción y devuelve un JSON simple con:
+Analiza la descripción y devuelve un JSON simple con esta estructura:
 {
  "steps": [
+   {"name": "Inicio", "type": "start"},
    {"name": "Customer places order", "type": "task", "actor": "Customer"},
    {"name": "Product available?", "type": "decision"},
    {"name": "Process Payment", "type": "task", "actor": "Sales"},
-   {"name": "Deliver order", "type": "task", "actor": "Logistics"},
+   {"name": "Prepare and Deliver order", "type": "task", "actor": "Logistics"},
    {"name": "End", "type": "end"}
  ],
  "actors": ["Customer", "Sales", "Logistics"],
- "pains": ["Delays in stock availability", "Customer cancellations"]
+ "pains": ["Retrasos en validación de stock", "Errores en facturación", "Retrasos logísticos"]
 }
                     """},
                     {"role": "user", "content": input_text},
@@ -97,10 +98,11 @@ Analiza la descripción y devuelve un JSON simple con:
 
             ai_output = response.choices[0].message.content.strip()
 
+            # Intentar convertir a JSON
             try:
                 data = json.loads(ai_output)
             except json.JSONDecodeError:
-                st.error("⚠️ La IA devolvió texto no estructurado. Mostrando salida sin procesar:")
+                st.warning("⚠️ La IA devolvió texto no estructurado. Mostrando salida sin procesar.")
                 st.text(ai_output)
                 data = {}
 
@@ -109,26 +111,38 @@ Analiza la descripción y devuelve un JSON simple con:
                 actors = data.get("actors", [])
                 pains = data.get("pains", [])
 
-                tabs = st.tabs(["🗺️ Mapa BPMN", "📋 Estructura", "👥 Stakeholders", "⚠️ Pain Points"])
+                tabs = st.tabs(["🗺️ Mapa Visual BPM", "📋 Estructura JSON", "👥 Stakeholders", "⚠️ Pain Points"])
 
                 # ==========================================
-                # 🗺️ MAPA BPMN (MERMAID)
+                # 🗺️ MAPA VISUAL BPM (RENDERIZADO)
                 # ==========================================
                 with tabs[0]:
-                    st.subheader("🗺️ Mapa de proceso estilo BPMN")
+                    st.subheader("🧩 Mapa visual del proceso (estilo BPMN)")
                     mermaid_code = generate_mermaid(steps)
-                    st.markdown(f"```mermaid\n{mermaid_code}\n```")
+                    st.components.v1.html(
+                        f"""
+                        <div class="mermaid">
+                        {mermaid_code}
+                        </div>
+                        <script type="module">
+                          import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+                          mermaid.initialize({{ startOnLoad: true, theme: "default" }});
+                        </script>
+                        """,
+                        height=700,
+                    )
 
                 # ==========================================
-                # 📋 JSON SIMPLE
+                # 📋 ESTRUCTURA JSON
                 # ==========================================
                 with tabs[1]:
                     st.json(data)
 
                 # ==========================================
-                # 👥 STAKEHOLDERS
+                # 👥 ACTORES
                 # ==========================================
                 with tabs[2]:
+                    st.subheader("👥 Actores / Stakeholders")
                     if actors:
                         st.dataframe(pd.DataFrame(actors, columns=["Stakeholders"]))
                     else:
@@ -138,6 +152,7 @@ Analiza la descripción y devuelve un JSON simple con:
                 # ⚠️ PAIN POINTS
                 # ==========================================
                 with tabs[3]:
+                    st.subheader("⚠️ Problemas detectados")
                     if pains:
                         st.dataframe(pd.DataFrame(pains, columns=["Pain Points"]))
                     else:
