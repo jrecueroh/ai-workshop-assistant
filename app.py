@@ -152,7 +152,7 @@ def draw_process_mermaid(steps):
     if not steps:
         return None
 
-    # Detectar departamentos únicos
+    # === Detectar departamentos únicos (lanes horizontales) ===
     departments = []
     for s in steps:
         d = s.get("department") or s.get("actor") or "General"
@@ -160,12 +160,9 @@ def draw_process_mermaid(steps):
             departments.append(d)
 
     node_map = {}
-
-    # === Mermaid base (flujo izquierda → derecha) ===
     mermaid = "flowchart LR\n"
-    mermaid += "%% --- Swimlanes horizontales (uno por departamento) ---\n"
 
-    # Crear subgraphs horizontales (uno por departamento)
+    # === Crear un lane por departamento, todos a igual altura ===
     for dept in departments:
         mermaid += f"  subgraph {sanitize_label(dept)}\n"
         for i, s in enumerate([x for x in steps if (x.get('department') or x.get('actor') or 'General') == dept]):
@@ -176,40 +173,53 @@ def draw_process_mermaid(steps):
             node_type = s.get("type", "task")
 
             if node_type == "start":
-                mermaid += f"    N{idx}((\"{label}\")):::startNode\n"
+                node = f'N{idx}((\"{label}\")):::startNode'
             elif node_type == "end":
-                mermaid += f"    N{idx}((\"{label}\")):::endNode\n"
+                node = f'N{idx}((\"{label}\")):::endNode'
             elif node_type == "decision":
-                mermaid += f"    N{idx}{{\"{label}\"}}:::decisionNode\n"
+                node = f'N{idx}{{\"{label}\"}}:::decisionNode'
             else:
-                mermaid += f"    N{idx}[\"{label}\"]:::taskNode\n"
+                node = f'N{idx}[\"{label}\"]:::taskNode'
             node_map[idx] = dept
+            mermaid += f"    {node}\n"
         mermaid += "  end\n\n"
 
-    # === Conexiones ===
-    mermaid += "%% --- Flujo de izquierda a derecha ---\n"
+    # === Conexiones izquierda→derecha ===
+    mermaid += "%% --- Flujo ---\n"
     for i in range(len(steps) - 1):
         if node_map[i] != node_map[i + 1]:
-            mermaid += f"  N{i} -.-> N{i+1}\n"  # flecha punteada inter-lane
+            mermaid += f"  N{i} -.-> N{i+1}\n"   # cruzar lanes
         else:
             mermaid += f"  N{i} --> N{i+1}\n"
 
-    # === Estilos ===
+    # === Estilos visuales ===
     mermaid += """
-    classDef startNode fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#000,font-weight:bold;
-    classDef endNode fill:#FFCDD2,stroke:#B71C1C,stroke-width:2px,color:#000,font-weight:bold;
-    classDef decisionNode fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#000;
-    classDef taskNode fill:#E3F2FD,stroke:#1565C0,stroke-width:1px,color:#000;
+    classDef startNode fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#000,font-size:14px,font-weight:bold;
+    classDef endNode fill:#FFCDD2,stroke:#B71C1C,stroke-width:2px,color:#000,font-size:14px,font-weight:bold;
+    classDef decisionNode fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#000,font-size:14px;
+    classDef taskNode fill:#E3F2FD,stroke:#1565C0,stroke-width:1px,color:#000,font-size:14px;
 
-    %% Lanes con color alternado
-    style General fill:#f5f5f5,stroke:#BDBDBD,stroke-width:1px;
+    %% Lanes
+    linkStyle default stroke-width:2px;
     """
 
-    # Render HTML
+    # === HTML contenedor con zoom/pan ===
     html = f"""
-    <div class="mermaid">
-    {mermaid}
+    <div id="graph-container" style="position:relative;width:100%;height:800px;overflow:hidden;border:1px solid #ddd;">
+      <div id="zoom-controls" style="
+          position:absolute;top:10px;right:10px;z-index:20;
+          background:rgba(255,255,255,0.9);padding:5px 8px;border-radius:6px;
+          box-shadow:0 1px 3px rgba(0,0,0,0.3);font-size:18px;">
+        🔍 <button onclick="zoomIn()">+</button>
+        <button onclick="zoomOut()">−</button>
+        <button onclick="resetZoom()">⟳</button>
+      </div>
+
+      <div id="graph" class="mermaid" style="transform-origin: 0 0;">
+      {mermaid}
+      </div>
     </div>
+
     <script type="module">
       import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
       mermaid.initialize({{
@@ -220,9 +230,37 @@ def draw_process_mermaid(steps):
           htmlLabels: true
         }}
       }});
+
+      // === Zoom & Pan ===
+      let scale = 1;
+      const container = document.getElementById('graph-container');
+      const graph = document.getElementById('graph');
+      container.addEventListener('wheel', e => {{
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        scale = Math.min(Math.max(0.3, scale + delta), 2.5);
+        graph.style.transform = `scale(${{scale}})`;
+      }});
+      function zoomIn() {{ scale = Math.min(scale + 0.2, 3); graph.style.transform = `scale(${{scale}})`; }}
+      function zoomOut() {{ scale = Math.max(scale - 0.2, 0.3); graph.style.transform = `scale(${{scale}})`; }}
+      function resetZoom() {{ scale = 1; graph.style.transform = `scale(1)`; }}
+      window.zoomIn = zoomIn; window.zoomOut = zoomOut; window.resetZoom = resetZoom;
+
+      // Arrastrar el gráfico
+      let isDragging = false, startX, startY, offsetX=0, offsetY=0;
+      container.addEventListener('mousedown', e => {{ isDragging = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; }});
+      container.addEventListener('mouseup', () => isDragging = false);
+      container.addEventListener('mouseleave', () => isDragging = false);
+      container.addEventListener('mousemove', e => {{
+        if(!isDragging) return;
+        offsetX = e.clientX - startX;
+        offsetY = e.clientY - startY;
+        graph.style.transform = `translate(${{offsetX}}px, ${{offsetY}}px) scale(${{scale}})`;
+      }});
     </script>
     """
     return html
+
 
 # --- Estructura Organizacional ---
 def draw_org_mermaid(nodes):
