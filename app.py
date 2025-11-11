@@ -142,79 +142,100 @@ def call_openai_json(system_prompt, user_text):
         return {}
 
 # ==============================
-# VISUALIZACIÓN (MERMAID)
+# VISUALIZACIÓN
 # ==============================
 def sanitize_label(text):
     return re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ ,.!?¿¡:/()_-]', '', text or '').replace("\n", " ")
 
-# --- Swimlane: Mapa de Procesos ---
+# --- NUEVO Mapa de Procesos con swimlanes reales ---
 def draw_process_mermaid(steps):
     if not steps:
         return None
 
     # Detectar departamentos únicos (ordenados)
-    depts = []
+    departments = []
     for s in steps:
         d = s.get("department") or s.get("actor") or "General"
-        if d not in depts:
-            depts.append(d)
+        if d not in departments:
+            departments.append(d)
 
-    # Base Mermaid
-    mermaid = "flowchart LR\n"
-    mermaid += "%% --- Swimlanes ---\n"
-
-    # Mapa de nodos
+    lane_map = {dept: i for i, dept in enumerate(departments)}
     node_map = {}
 
-    # Crear lanes horizontales (subgraphs)
-    for d in depts:
-        mermaid += f"  subgraph {sanitize_label(d)}\n"
-        for i, s in enumerate([x for x in steps if (x.get('department') or x.get('actor') or 'General') == d]):
-            idx = steps.index(s)
-            name = sanitize_label(s.get("name", f"Paso {i+1}"))
-            actor = sanitize_label(s.get("actor", ""))
-            label = f"{name}\\n({actor})" if actor else name
-            node_type = s.get("type", "task")
+    mermaid = "flowchart TB\n"
+    mermaid += "%% --- Swimlanes horizontales ---\n"
 
-            if node_type == "start":
-                mermaid += f"    N{idx}((\"{label}\")):::startNode\n"
-            elif node_type == "end":
-                mermaid += f"    N{idx}((\"{label}\")):::endNode\n"
-            elif node_type == "decision":
-                mermaid += f"    N{idx}{{\"{label}\"}}:::decisionNode\n"
-            else:
-                mermaid += f"    N{idx}[\"{label}\"]:::taskNode\n"
+    for idx, s in enumerate(steps):
+        dept = s.get("department") or s.get("actor") or "General"
+        name = sanitize_label(s.get("name", f"Paso {idx+1}"))
+        actor = sanitize_label(s.get("actor", ""))
+        label = f"{name}\\n({actor})" if actor else name
+        node_type = s.get("type", "task")
 
-            node_map[idx] = d
-        mermaid += "  end\n\n"
+        if node_type == "start":
+            node = f'N{idx}((\"{label}\")):::startNode'
+        elif node_type == "end":
+            node = f'N{idx}((\"{label}\")):::endNode'
+        elif node_type == "decision":
+            node = f'N{idx}{{\"{label}\"}}:::decisionNode'
+        else:
+            node = f'N{idx}[\"{label}\"]:::taskNode'
 
-    # Conexiones horizontales entre pasos
-    mermaid += "%% --- Connections ---\n"
-    for i in range(len(steps) - 1):
-        mermaid += f"  N{i} --> N{i+1}\n"
+        node_map[idx] = dept
+        mermaid += f"  {node}\n"
 
-    # Si hay pasos en distintos departamentos, marcar flechas inter-lane punteadas
-    mermaid += "\n%% --- Cross-lane interactions ---\n"
+    mermaid += "\n%% --- Conexiones ordenadas ---\n"
     for i in range(len(steps) - 1):
         if node_map[i] != node_map[i + 1]:
-            mermaid += f"  N{i} -.-> N{i+1}\n"
+            mermaid += f"  N{i} -.-> N{i+1}\n"  # flecha punteada inter-lane
+        else:
+            mermaid += f"  N{i} --> N{i+1}\n"
 
-    # Estilos visuales
+    # Estilos de nodos
     mermaid += """
     classDef startNode fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#000,font-weight:bold;
     classDef endNode fill:#FFCDD2,stroke:#B71C1C,stroke-width:2px,color:#000,font-weight:bold;
     classDef decisionNode fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#000;
     classDef taskNode fill:#E3F2FD,stroke:#1565C0,stroke-width:1px,color:#000;
-
-    %% colores de lanes (bandas)
-    style General fill:#f4f4f4,stroke:#BDBDBD,stroke-width:1px;
     """
 
-    # Inyección Mermaid
+    # Swimlanes HTML simuladas debajo del gráfico
+    colors = ["#f8f9fa", "#f0f4ff", "#fef9e7", "#e8f5e9", "#fff3e0"]
+    lane_html = ""
+    for i, d in enumerate(departments):
+        lane_html += f"""
+        <div style='
+            background:{colors[i % len(colors)]};
+            border:1px solid #ccc;
+            border-left:6px solid #666;
+            padding:20px;
+            margin:10px 0;
+            height:120px;
+            position:relative;
+        '>
+            <div style='
+                position:absolute;
+                top:0;
+                left:10px;
+                font-weight:bold;
+                background:white;
+                padding:2px 6px;
+                border-radius:4px;
+                box-shadow:0 1px 2px rgba(0,0,0,0.1);
+            '>{d}</div>
+        </div>
+        """
+
     html = f"""
-    <div class="mermaid">
-    {mermaid}
+    <div style='position:relative;width:100%;'>
+      <div class="mermaid" style='z-index:10;position:absolute;top:0;left:0;width:100%;height:100%;'>
+      {mermaid}
+      </div>
+      <div style='z-index:1;position:relative;margin-top:50px;'>
+        {lane_html}
+      </div>
     </div>
+
     <script type="module">
       import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
       mermaid.initialize({{
@@ -228,7 +249,6 @@ def draw_process_mermaid(steps):
     </script>
     """
     return html
-
 
 # --- Estructura Organizacional ---
 def draw_org_mermaid(nodes):
@@ -311,7 +331,7 @@ if "data" in st.session_state:
 
     with tabs[0]:
         html = draw_process_mermaid(steps)
-        if html: components.html(html, height=650, scrolling=True)
+        if html: components.html(html, height=800, scrolling=True)
         else: st.info(TXT["no_data"])
 
     with tabs[1]:
