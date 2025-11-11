@@ -134,7 +134,7 @@ def call_openai_json(system_prompt, user_text):
         return {}
 
 # ==============================
-# VISUALIZACIÓN (MERMAID CORREGIDO)
+# VISUALIZACIÓN (MERMAID)
 # ==============================
 def sanitize_label(text):
     return re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ ,.!?¿¡:/()_-]', '', text or '').replace("\n", " ")
@@ -143,19 +143,20 @@ def sanitize_label(text):
 def draw_process_mermaid(steps):
     if not steps:
         return None
-
     mermaid = "flowchart LR\n"
-    shapes = {"start": "((", "end": "))", "decision": "{", "task": "["}
-    closes = {"start": "))", "end": "((", "decision": "}", "task": "]"}
-
     for i, s in enumerate(steps):
-        name = sanitize_label(s.get("name", f"Step {i+1}"))
+        name = sanitize_label(s.get("name", f"Paso {i+1}"))
         actor = sanitize_label(s.get("actor", ""))
+        label = f"{name}\\n({actor})" if actor else name
         node_type = s.get("type", "task")
-        left = shapes.get(node_type, "[")
-        right = closes.get(node_type, "]")
-        label = f"{name}\\n{actor}" if actor else name
-        mermaid += f"    N{i}{left}{label}{right}\n"
+        if node_type == "start":
+            mermaid += f"    N{i}((\"{label}\"))\n"
+        elif node_type == "end":
+            mermaid += f"    N{i}((\"{label}\"))\n"
+        elif node_type == "decision":
+            mermaid += f"    N{i}{{\"{label}\"}}\n"
+        else:
+            mermaid += f"    N{i}[\"{label}\"]\n"
         if i < len(steps) - 1:
             mermaid += f"    N{i} --> N{i+1}\n"
 
@@ -177,16 +178,15 @@ def draw_process_mermaid(steps):
     """
     return html
 
-
 # --- Estructura Organizacional (vertical tipo árbol) ---
 def draw_org_mermaid(nodes):
     if not nodes:
         return None
 
-    mermaid = "graph TB\n"  # Top → Bottom (organigrama vertical)
+    mermaid = "graph TB\n"  # vertical (Top → Bottom)
     id_map = {}
 
-    # Crear nodos con IDs seguros
+    # Crear nodos
     for i, n in enumerate(nodes):
         name = sanitize_label(n.get("name", "Nodo"))
         ntype = sanitize_label(n.get("type", ""))
@@ -195,7 +195,7 @@ def draw_org_mermaid(nodes):
         label = f"{name}\\n({ntype})" if ntype else name
         mermaid += f'    {node_id}["{label}"]\n'
 
-    # Crear relaciones padre → hijo
+    # Relaciones padre → hijo
     for n in nodes:
         parent = sanitize_label(n.get("parent", ""))
         child = sanitize_label(n.get("name", ""))
@@ -251,7 +251,7 @@ if "data" in st.session_state:
 
     with tabs[1]:
         html = draw_org_mermaid(nodes)
-        if html: components.html(html, height=700, scrolling=True)
+        if html: components.html(html, height=800, scrolling=True)
         else: st.info(TXT["no_data"])
 
     with tabs[2]:
