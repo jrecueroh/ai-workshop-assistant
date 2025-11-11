@@ -152,7 +152,7 @@ def draw_process_mermaid(steps):
     if not steps:
         return None
 
-    # === Detectar departamentos (lanes horizontales) ===
+    # === Detectar departamentos únicos ===
     departments = []
     for s in steps:
         d = s.get("department") or s.get("actor") or "General"
@@ -169,7 +169,7 @@ def draw_process_mermaid(steps):
             idx = steps.index(s)
             name = sanitize_label(s.get("name", f"Paso {idx+1}"))
             actor = sanitize_label(s.get("actor", ""))
-            label = f"{name}<br/><small>({actor})</small>" if actor else name
+            label = f"<b>{name}</b><br/><small>({actor})</small>" if actor else f"<b>{name}</b>"
             node_type = s.get("type", "task")
 
             if node_type == "start":
@@ -200,7 +200,7 @@ def draw_process_mermaid(steps):
     linkStyle default stroke-width:2px;
     """
 
-    # === HTML + CSS + Zoom/Pan ===
+    # === HTML y CSS para ajuste dinámico ===
     html = f"""
     <div id="graph-container" style="position:relative;width:100%;height:900px;overflow:hidden;border:1px solid #ddd;">
       <div id="zoom-controls" style="
@@ -218,12 +218,13 @@ def draw_process_mermaid(steps):
     </div>
 
     <style>
-      /* --- Ajuste de texto en cajas Mermaid --- */
+      /* Ajustar cajas al contenido */
       .mermaid svg {{
         font-family: 'Inter', 'Segoe UI', sans-serif !important;
         font-size: 18px !important;
         font-weight: 600 !important;
       }}
+
       .mermaid svg foreignObject div {{
         display: flex;
         align-items: center;
@@ -231,18 +232,22 @@ def draw_process_mermaid(steps):
         text-align: center;
         white-space: normal !important;
         word-wrap: break-word;
+        width: auto !important;
+        min-width: 180px;
+        max-width: 280px;
+        padding: 10px 14px;
         line-height: 1.3;
-        min-width: 140px;
-        max-width: 250px;
-        padding: 8px 12px;
       }}
+
       .mermaid svg rect, .mermaid svg ellipse {{
-        rx: 12px; ry: 12px;
-        filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.1));
+        rx: 14px; ry: 14px;
+        filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.15));
       }}
+
       .mermaid svg text {{
         fill: #111 !important;
       }}
+
       button {{
         border: 1px solid #ccc;
         border-radius: 4px;
@@ -262,7 +267,7 @@ def draw_process_mermaid(steps):
         flowchart: {{
           curve: "basis",
           htmlLabels: true,
-          useMaxWidth: true
+          useMaxWidth: true,
         }}
       }});
 
@@ -295,6 +300,7 @@ def draw_process_mermaid(steps):
     </script>
     """
     return html
+
 
 
 
