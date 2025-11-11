@@ -11,9 +11,6 @@ import streamlit.components.v1 as components
 # ==============================
 st.set_page_config(page_title="AI Workshop Assistant PRO", layout="wide")
 
-# ==============================
-# ESTILO CSS
-# ==============================
 st.markdown("""
 <style>
 div[data-testid="stHorizontalBlock"] > div:nth-child(2) {text-align:right;}
@@ -137,21 +134,30 @@ def call_openai_json(system_prompt, user_text):
         return {}
 
 # ==============================
-# VISUALIZACIÓN (MERMAID)
+# VISUALIZACIÓN (MERMAID CORREGIDO)
 # ==============================
+def sanitize_label(text):
+    return re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ ,.!?¿¡:/()_-]', '', text or '').replace("\n", " ")
+
 def draw_process_mermaid(steps):
-    if not steps: return None
+    if not steps:
+        return None
+
     mermaid = "flowchart LR\n"
-    shapes = {"start":"((", "end":"))", "decision":"{", "task":"["}
-    closes = {"start":"))", "end":"((", "decision":"}", "task":"]"}
-    for i,s in enumerate(steps):
-        name = s.get("name","Paso")
-        actor = s.get("actor","")
-        t = s.get("type","task")
-        left,right = shapes.get(t,"["), closes.get(t,"]")
-        mermaid += f"    N{i}{left}{name}\\n{actor}{right}\n"
-        if i < len(steps)-1:
+    shapes = {"start": "((", "end": "))", "decision": "{", "task": "["}
+    closes = {"start": "))", "end": "((", "decision": "}", "task": "]"}
+
+    for i, s in enumerate(steps):
+        name = sanitize_label(s.get("name", f"Step {i+1}"))
+        actor = sanitize_label(s.get("actor", ""))
+        node_type = s.get("type", "task")
+        left = shapes.get(node_type, "[")
+        right = closes.get(node_type, "]")
+        label = f"{name}\\n{actor}" if actor else name
+        mermaid += f"    N{i}{left}{label}{right}\n"
+        if i < len(steps) - 1:
             mermaid += f"    N{i} --> N{i+1}\n"
+
     return f"""
     <div class="mermaid">
     {mermaid}
@@ -163,12 +169,18 @@ def draw_process_mermaid(steps):
     """
 
 def draw_org_mermaid(nodes):
-    if not nodes: return None
+    if not nodes:
+        return None
+
     mermaid = "graph TD\n"
     for n in nodes:
-        mermaid += f'    "{n["name"]}"["{n["name"]} ({n.get("type","")})"]\n'
-        if n.get("parent"):
-            mermaid += f'    "{n["parent"]}" --> "{n["name"]}"\n'
+        name = sanitize_label(n.get("name", "Node"))
+        ntype = sanitize_label(n.get("type", ""))
+        parent = sanitize_label(n.get("parent", ""))
+        mermaid += f'    {name}["{name} ({ntype})"]\n'
+        if parent:
+            mermaid += f'    {parent} --> {name}\n'
+
     return f"""
     <div class="mermaid">
     {mermaid}
@@ -230,12 +242,16 @@ if "data" in st.session_state:
 
     with tabs[6]:
         buf = io.BytesIO()
-        with pd.ExcelWriter(buf,engine="openpyxl") as w:
-            pd.DataFrame(steps).to_excel(w,"Steps",index=False)
-            pd.DataFrame(pains).to_excel(w,"Pains",index=False)
-            pd.DataFrame(recs).to_excel(w,"Recs",index=False)
-            pd.DataFrame(nodes).to_excel(w,"OrgNodes",index=False)
-            pd.DataFrame(parts).to_excel(w,"Participants",index=False)
+        with pd.ExcelWriter(buf, engine="openpyxl") as w:
+            pd.DataFrame(steps).to_excel(excel_writer=w, sheet_name="Steps", index=False)
+            pd.DataFrame(pains).to_excel(excel_writer=w, sheet_name="Pains", index=False)
+            pd.DataFrame(recs).to_excel(excel_writer=w, sheet_name="Recs", index=False)
+            pd.DataFrame(nodes).to_excel(excel_writer=w, sheet_name="OrgNodes", index=False)
+            pd.DataFrame(parts).to_excel(excel_writer=w, sheet_name="Participants", index=False)
         buf.seek(0)
-        st.download_button(TXT["export_label"], buf, "company_analysis.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(
+            label=TXT["export_label"],
+            data=buf,
+            file_name="company_analysis.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
