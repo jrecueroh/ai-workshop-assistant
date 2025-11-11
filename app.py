@@ -152,7 +152,7 @@ def draw_process_mermaid(steps):
     if not steps:
         return None
 
-    # === Detectar departamentos únicos (lanes horizontales) ===
+    # === Detectar departamentos (lanes horizontales) ===
     departments = []
     for s in steps:
         d = s.get("department") or s.get("actor") or "General"
@@ -162,37 +162,36 @@ def draw_process_mermaid(steps):
     node_map = {}
     mermaid = "flowchart LR\n"
 
-    # === Crear un lane por departamento ===
+    # === Crear un lane (subgraph) por departamento ===
     for dept in departments:
         mermaid += f"  subgraph {sanitize_label(dept)}\n"
         for i, s in enumerate([x for x in steps if (x.get('department') or x.get('actor') or 'General') == dept]):
             idx = steps.index(s)
             name = sanitize_label(s.get("name", f"Paso {idx+1}"))
             actor = sanitize_label(s.get("actor", ""))
-            label = f"{name}\\n({actor})" if actor else name
+            label = f"{name}<br/><small>({actor})</small>" if actor else name
             node_type = s.get("type", "task")
 
             if node_type == "start":
-                node = f'N{idx}((\"{label}\")):::startNode'
+                node = f'N{idx}(["{label}"]):::startNode'
             elif node_type == "end":
-                node = f'N{idx}((\"{label}\")):::endNode'
+                node = f'N{idx}(["{label}"]):::endNode'
             elif node_type == "decision":
-                node = f'N{idx}{{\"{label}\"}}:::decisionNode'
+                node = f'N{idx}{{"{label}"}}:::decisionNode'
             else:
-                node = f'N{idx}[\"{label}\"]:::taskNode'
+                node = f'N{idx}["{label}"]:::taskNode'
             node_map[idx] = dept
             mermaid += f"    {node}\n"
         mermaid += "  end\n\n"
 
     # === Conexiones izquierda→derecha ===
-    mermaid += "%% --- Flujo ---\n"
     for i in range(len(steps) - 1):
         if node_map[i] != node_map[i + 1]:
             mermaid += f"  N{i} -.-> N{i+1}\n"
         else:
             mermaid += f"  N{i} --> N{i+1}\n"
 
-    # === Estilos ===
+    # === Estilos Mermaid ===
     mermaid += """
     classDef startNode fill:#C8E6C9,stroke:#2E7D32,stroke-width:2.5px,color:#000,font-size:18px,font-weight:bold;
     classDef endNode fill:#FFCDD2,stroke:#B71C1C,stroke-width:2.5px,color:#000,font-size:18px,font-weight:bold;
@@ -201,9 +200,9 @@ def draw_process_mermaid(steps):
     linkStyle default stroke-width:2px;
     """
 
-    # === HTML contenedor con CSS de fuente y zoom/pan ===
+    # === HTML + CSS + Zoom/Pan ===
     html = f"""
-    <div id="graph-container" style="position:relative;width:100%;height:850px;overflow:hidden;border:1px solid #ddd;">
+    <div id="graph-container" style="position:relative;width:100%;height:900px;overflow:hidden;border:1px solid #ddd;">
       <div id="zoom-controls" style="
           position:absolute;top:10px;right:10px;z-index:20;
           background:rgba(255,255,255,0.9);padding:5px 8px;border-radius:6px;
@@ -219,18 +218,39 @@ def draw_process_mermaid(steps):
     </div>
 
     <style>
-      /* --- Aumentar el texto dentro del SVG generado por Mermaid --- */
+      /* --- Ajuste de texto en cajas Mermaid --- */
       .mermaid svg {{
         font-family: 'Inter', 'Segoe UI', sans-serif !important;
         font-size: 18px !important;
         font-weight: 600 !important;
       }}
+      .mermaid svg foreignObject div {{
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        white-space: normal !important;
+        word-wrap: break-word;
+        line-height: 1.3;
+        min-width: 140px;
+        max-width: 250px;
+        padding: 8px 12px;
+      }}
       .mermaid svg rect, .mermaid svg ellipse {{
-        rx: 10px; ry: 10px;
+        rx: 12px; ry: 12px;
         filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.1));
       }}
       .mermaid svg text {{
         fill: #111 !important;
+      }}
+      button {{
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background: #f9f9f9;
+        cursor: pointer;
+      }}
+      button:hover {{
+        background: #e0e0e0;
       }}
     </style>
 
@@ -241,11 +261,12 @@ def draw_process_mermaid(steps):
         theme: "neutral",
         flowchart: {{
           curve: "basis",
-          htmlLabels: true
+          htmlLabels: true,
+          useMaxWidth: true
         }}
       }});
 
-      // === Zoom & Pan ===
+      // === Zoom y Pan ===
       let scale = 1;
       const container = document.getElementById('graph-container');
       const graph = document.getElementById('graph');
@@ -260,7 +281,7 @@ def draw_process_mermaid(steps):
       function resetZoom() {{ scale = 1; graph.style.transform = `scale(1)`; }}
       window.zoomIn = zoomIn; window.zoomOut = zoomOut; window.resetZoom = resetZoom;
 
-      // Arrastrar el gráfico
+      // Drag (Pan)
       let isDragging = false, startX, startY, offsetX=0, offsetY=0;
       container.addEventListener('mousedown', e => {{ isDragging = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; }});
       container.addEventListener('mouseup', () => isDragging = false);
@@ -274,6 +295,7 @@ def draw_process_mermaid(steps):
     </script>
     """
     return html
+
 
 
 
