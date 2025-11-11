@@ -152,17 +152,21 @@ def draw_process_mermaid(steps):
     if not steps:
         return None
 
-    # Detectar departamentos únicos
+    # Detectar departamentos únicos (ordenados)
     depts = []
     for s in steps:
         d = s.get("department") or s.get("actor") or "General"
         if d not in depts:
             depts.append(d)
 
+    # Base Mermaid
     mermaid = "flowchart LR\n"
+    mermaid += "%% --- Swimlanes ---\n"
 
-    # Crear subgraph para cada departamento
+    # Mapa de nodos
     node_map = {}
+
+    # Crear lanes horizontales (subgraphs)
     for d in depts:
         mermaid += f"  subgraph {sanitize_label(d)}\n"
         for i, s in enumerate([x for x in steps if (x.get('department') or x.get('actor') or 'General') == d]):
@@ -171,22 +175,42 @@ def draw_process_mermaid(steps):
             actor = sanitize_label(s.get("actor", ""))
             label = f"{name}\\n({actor})" if actor else name
             node_type = s.get("type", "task")
-            if node_type == "start":
-                mermaid += f"    N{idx}((\"{label}\"))\n"
-            elif node_type == "end":
-                mermaid += f"    N{idx}((\"{label}\"))\n"
-            elif node_type == "decision":
-                mermaid += f"    N{idx}{{\"{label}\"}}\n"
-            else:
-                mermaid += f"    N{idx}[\"{label}\"]\n"
-            node_map[idx] = d
-        mermaid += "  end\n"
 
-    # Conexiones entre pasos
+            if node_type == "start":
+                mermaid += f"    N{idx}((\"{label}\")):::startNode\n"
+            elif node_type == "end":
+                mermaid += f"    N{idx}((\"{label}\")):::endNode\n"
+            elif node_type == "decision":
+                mermaid += f"    N{idx}{{\"{label}\"}}:::decisionNode\n"
+            else:
+                mermaid += f"    N{idx}[\"{label}\"]:::taskNode\n"
+
+            node_map[idx] = d
+        mermaid += "  end\n\n"
+
+    # Conexiones horizontales entre pasos
+    mermaid += "%% --- Connections ---\n"
     for i in range(len(steps) - 1):
         mermaid += f"  N{i} --> N{i+1}\n"
 
-    # Configuración visual
+    # Si hay pasos en distintos departamentos, marcar flechas inter-lane punteadas
+    mermaid += "\n%% --- Cross-lane interactions ---\n"
+    for i in range(len(steps) - 1):
+        if node_map[i] != node_map[i + 1]:
+            mermaid += f"  N{i} -.-> N{i+1}\n"
+
+    # Estilos visuales
+    mermaid += """
+    classDef startNode fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#000,font-weight:bold;
+    classDef endNode fill:#FFCDD2,stroke:#B71C1C,stroke-width:2px,color:#000,font-weight:bold;
+    classDef decisionNode fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#000;
+    classDef taskNode fill:#E3F2FD,stroke:#1565C0,stroke-width:1px,color:#000;
+
+    %% colores de lanes (bandas)
+    style General fill:#f4f4f4,stroke:#BDBDBD,stroke-width:1px;
+    """
+
+    # Inyección Mermaid
     html = f"""
     <div class="mermaid">
     {mermaid}
@@ -204,6 +228,7 @@ def draw_process_mermaid(steps):
     </script>
     """
     return html
+
 
 # --- Estructura Organizacional ---
 def draw_org_mermaid(nodes):
