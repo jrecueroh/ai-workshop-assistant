@@ -173,13 +173,23 @@ def draw_org_mermaid(nodes):
         return None
 
     mermaid = "graph TD\n"
-    for n in nodes:
+    id_map = {}
+
+    # Definir nodos con IDs seguros
+    for i, n in enumerate(nodes):
         name = sanitize_label(n.get("name", "Node"))
         ntype = sanitize_label(n.get("type", ""))
+        node_id = f"N{i}"
+        id_map[name] = node_id
+        label = f"{name} ({ntype})" if ntype else name
+        mermaid += f'    {node_id}["{label}"]\n'
+
+    # Definir conexiones padre → hijo
+    for n in nodes:
         parent = sanitize_label(n.get("parent", ""))
-        mermaid += f'    {name}["{name} ({ntype})"]\n'
-        if parent:
-            mermaid += f'    {parent} --> {name}\n'
+        child = sanitize_label(n.get("name", "Node"))
+        if parent and parent in id_map and child in id_map:
+            mermaid += f'    {id_map[parent]} --> {id_map[child]}\n'
 
     return f"""
     <div class="mermaid">
