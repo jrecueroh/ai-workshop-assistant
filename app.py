@@ -139,6 +139,7 @@ def call_openai_json(system_prompt, user_text):
 def sanitize_label(text):
     return re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ ,.!?¿¡:/()_-]', '', text or '').replace("\n", " ")
 
+# --- Mapa de Procesos (horizontal BPMN style) ---
 def draw_process_mermaid(steps):
     if not steps:
         return None
@@ -158,48 +159,66 @@ def draw_process_mermaid(steps):
         if i < len(steps) - 1:
             mermaid += f"    N{i} --> N{i+1}\n"
 
-    return f"""
+    html = f"""
     <div class="mermaid">
     {mermaid}
     </div>
     <script type="module">
       import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-      mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});
+      mermaid.initialize({{
+        startOnLoad: true,
+        theme: "neutral",
+        flowchart: {{
+            curve: "basis",
+            htmlLabels: true
+        }}
+      }});
     </script>
     """
+    return html
 
+
+# --- Estructura Organizacional (vertical tipo árbol) ---
 def draw_org_mermaid(nodes):
     if not nodes:
         return None
 
-    mermaid = "graph TD\n"
+    mermaid = "graph TB\n"  # Top → Bottom (organigrama vertical)
     id_map = {}
 
-    # Definir nodos con IDs seguros
+    # Crear nodos con IDs seguros
     for i, n in enumerate(nodes):
-        name = sanitize_label(n.get("name", "Node"))
+        name = sanitize_label(n.get("name", "Nodo"))
         ntype = sanitize_label(n.get("type", ""))
         node_id = f"N{i}"
         id_map[name] = node_id
-        label = f"{name} ({ntype})" if ntype else name
+        label = f"{name}\\n({ntype})" if ntype else name
         mermaid += f'    {node_id}["{label}"]\n'
 
-    # Definir conexiones padre → hijo
+    # Crear relaciones padre → hijo
     for n in nodes:
         parent = sanitize_label(n.get("parent", ""))
-        child = sanitize_label(n.get("name", "Node"))
+        child = sanitize_label(n.get("name", ""))
         if parent and parent in id_map and child in id_map:
             mermaid += f'    {id_map[parent]} --> {id_map[child]}\n'
 
-    return f"""
+    html = f"""
     <div class="mermaid">
     {mermaid}
     </div>
     <script type="module">
       import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-      mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});
+      mermaid.initialize({{
+        startOnLoad: true,
+        theme: "neutral",
+        flowchart: {{
+            curve: "basis",
+            htmlLabels: true
+        }}
+      }});
     </script>
     """
+    return html
 
 # ==============================
 # ANÁLISIS
@@ -232,7 +251,7 @@ if "data" in st.session_state:
 
     with tabs[1]:
         html = draw_org_mermaid(nodes)
-        if html: components.html(html, height=600, scrolling=True)
+        if html: components.html(html, height=700, scrolling=True)
         else: st.info(TXT["no_data"])
 
     with tabs[2]:
