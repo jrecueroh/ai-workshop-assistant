@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================
 # Setup script for AI Workshop Assistant PRO
-# Ensures Graphviz is installed before Streamlit runs
+# Ensures Graphviz system binary is installed
 # ============================
 
 echo "🔧 Installing system dependencies..."
