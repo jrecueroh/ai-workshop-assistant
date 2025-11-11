@@ -8,13 +8,110 @@ import re
 from collections import defaultdict
 import streamlit.components.v1 as components
 
-# ==================================
-# NUEVO: detección de hablantes
-# ==================================
+# ==============================
+# CONFIGURACIÓN GENERAL
+# ==============================
+st.set_page_config(page_title="AI Workshop Assistant PRO", layout="wide")
+
+# ==============================
+# ESTILO CSS
+# ==============================
+st.markdown("""
+    <style>
+    div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
+        text-align: right;
+    }
+    button[role="button"] {
+        border-radius: 12px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ==============================
+# ESTADO DE IDIOMA
+# ==============================
+if "lang" not in st.session_state:
+    st.session_state.lang = "es"  # Español por defecto
+
+# ==============================
+# TOP BAR CON BANDERA
+# ==============================
+col1, col2 = st.columns([6, 1])
+with col1:
+    st.markdown("## 🧩 AI Workshop Assistant PRO")
+with col2:
+    if st.session_state.lang == "es":
+        if st.button("🇬🇧", help="Switch to English"):
+            st.session_state.lang = "en"
+            st.rerun()
+    else:
+        if st.button("🇪🇸", help="Cambiar a Español"):
+            st.session_state.lang = "es"
+            st.rerun()
+
+current_lang = st.session_state.lang
+
+# ==============================
+# TEXTOS
+# ==============================
+TXT = {
+    "es": {
+        "intro": "Analiza descripciones o transcripciones de workshops para generar **procesos y estructuras organizacionales** automáticamente.",
+        "input_label": "✏️ Pega aquí la transcripción o descripción:",
+        "input_ph": "Ejemplo: Matías: necesitamos revisar el flujo de producción. Sofía: el control de calidad tarda demasiado...",
+        "analyze_btn": "🚀 Analizar empresa y procesos",
+        "spinner": "Analizando con IA...",
+        "warn_no_text": "Por favor introduce texto para analizar.",
+        "tabs": [
+            "🗺️ Mapa de Procesos",
+            "🏗️ Estructura Organizacional",
+            "🧩 Datos del Proceso",
+            "📋 Datos Organizativos",
+            "👥 Participantes",
+            "💡 Recomendaciones IA",
+            "📤 Exportar"
+        ],
+        "no_data": "No se detectaron datos.",
+        "export_label": "⬇️ Descargar Excel con toda la información"
+    },
+    "en": {
+        "intro": "Analyze workshop descriptions or transcripts to automatically generate **processes and organizational structures**.",
+        "input_label": "✏️ Paste the transcript or description here:",
+        "input_ph": "Example: Matías: we need to review the production flow. Sofía: quality control takes too long...",
+        "analyze_btn": "🚀 Analyze company and processes",
+        "spinner": "Analyzing with AI...",
+        "warn_no_text": "Please enter text to analyze.",
+        "tabs": [
+            "🗺️ Process Map",
+            "🏗️ Organizational Structure",
+            "🧩 Process Data",
+            "📋 Org Data",
+            "👥 Participants",
+            "💡 AI Recommendations",
+            "📤 Export"
+        ],
+        "no_data": "No data detected.",
+        "export_label": "⬇️ Download Excel with all information"
+    }
+}[current_lang]
+
+st.markdown(TXT["intro"])
+
+# ==============================
+# CLIENTE OPENAI
+# ==============================
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+# ==============================
+# INPUT
+# ==============================
+text = st.text_area(TXT["input_label"], placeholder=TXT["input_ph"], height=200)
+analyze = st.button(TXT["analyze_btn"])
+
+# ==============================
+# PREPROCESAR TRANSCRIPCIÓN
+# ==============================
 def preprocess_transcript(text):
-    """
-    Detecta hablantes con formato tipo 'Nombre:' y devuelve texto limpio + lista de participantes.
-    """
     speakers = re.findall(r"(\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+):", text)
     unique = list(set(speakers))
     clean_text = re.sub(r"\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+:\s*", "", text)
@@ -23,9 +120,9 @@ def preprocess_transcript(text):
         "clean_text": clean_text.strip()
     }
 
-# ==================================
-# PROMPT unificado (modificado)
-# ==================================
+# ==============================
+# PROMPT UNIFICADO
+# ==============================
 def unified_prompt(lang):
     if lang == "es":
         return """
@@ -88,16 +185,54 @@ Return ONLY a valid JSON with this structure:
 }
 """
 
-# ==================================
-# NUEVAS VISUALIZACIONES LUCIDCHART-LIKE (Graphviz)
-# ==================================
+# ==============================
+# LLAMADA A OPENAI
+# ==============================
+def call_openai_json(system_prompt, user_text):
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt + "\n\n⚠️ Devuelve solo JSON, breve y sin explicaciones."},
+                {"role": "user", "content": user_text[:4000]},
+            ],
+            temperature=0.3,
+            max_tokens=1200,
+            timeout=40,
+        )
+        content = resp.choices[0].message.content.strip()
+    except Exception as e:
+        st.warning(f"⚠️ Error con gpt-4o-mini ({e}), usando gpt-3.5-turbo.")
+        resp = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text[:4000]},
+            ],
+            temperature=0.3,
+            max_tokens=1200,
+        )
+        content = resp.choices[0].message.content.strip()
+
+    match = re.search(r"\{.*\}", content, re.S)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            st.error("⚠️ JSON inválido recibido de la IA.")
+            return {}
+    else:
+        st.error("⚠️ No se detectó JSON en la respuesta de la IA.")
+        return {}
+
+# ==============================
+# NUEVAS VISUALIZACIONES (GRAPHVIZ)
+# ==============================
 def draw_process_graphviz(steps):
     if not steps:
         return None
-
     dot = graphviz.Digraph(format="svg")
     dot.attr(rankdir="LR", splines="ortho", nodesep="1.0", ranksep="0.8", bgcolor="white")
-
     for s in steps:
         node_type = s.get("type", "task")
         color = {
@@ -114,20 +249,15 @@ def draw_process_graphviz(steps):
         }.get(node_type, "box")
         label = f"{s['name']}\n({s.get('actor','')})"
         dot.node(s["name"], label, shape=shape, style="filled", fillcolor=color, fontcolor="white")
-
-    # Enlazar pasos secuenciales
     for i in range(len(steps) - 1):
         dot.edge(steps[i]["name"], steps[i + 1]["name"], arrowhead="vee", color="#555")
-
     return dot.pipe().decode("utf-8")
 
 def draw_org_graphviz(nodes):
     if not nodes:
         return None
-
     dot = graphviz.Digraph(format="svg")
     dot.attr(rankdir="TB", nodesep="0.8", ranksep="0.9", bgcolor="white")
-
     for n in nodes:
         color = {
             "group": "#B39DDB",
@@ -137,16 +267,17 @@ def draw_org_graphviz(nodes):
             "team": "#FFCC80"
         }.get(n["type"], "#E0E0E0")
         dot.node(n["name"], n["name"], shape="box", style="filled", fillcolor=color)
-
     for n in nodes:
         if n.get("parent"):
             dot.edge(n["parent"], n["name"], color="#555")
-
     return dot.pipe().decode("utf-8")
 
-# ==================================
+# ==============================
 # ANÁLISIS
-# ==================================
+# ==============================
+if "analyze" not in locals():
+    analyze = False
+
 if analyze:
     if not text.strip():
         st.warning(TXT["warn_no_text"])
@@ -161,9 +292,9 @@ if analyze:
             ]
             st.session_state.company_data = data
 
-# ==================================
+# ==============================
 # RESULTADOS
-# ==================================
+# ==============================
 if "company_data" in st.session_state:
     d = st.session_state.company_data
     org = d.get("organization", {})
@@ -175,35 +306,35 @@ if "company_data" in st.session_state:
     nodes = org.get("nodes", [])
     notes = org.get("notes", [])
 
-    tabs = st.tabs([
-        "🗺️ Mapa de Procesos",
-        "🏗️ Estructura Organizacional",
-        "🧩 Datos del Proceso",
-        "📋 Datos Organizativos",
-        "👥 Participantes",
-        "💡 Recomendaciones IA",
-        "📤 Exportar"
-    ])
+    tabs = st.tabs(TXT["tabs"])
 
     with tabs[0]:
         svg = draw_process_graphviz(steps)
-        if svg: components.html(svg, height=600, scrolling=True)
-        else: st.info(TXT["no_data"])
+        if svg:
+            components.html(svg, height=600, scrolling=True)
+        else:
+            st.info(TXT["no_data"])
 
     with tabs[1]:
         svg2 = draw_org_graphviz(nodes)
-        if svg2: components.html(svg2, height=600, scrolling=True)
-        else: st.info(TXT["no_data"])
+        if svg2:
+            components.html(svg2, height=600, scrolling=True)
+        else:
+            st.info(TXT["no_data"])
 
     with tabs[2]:
         st.json(proc)
-        if steps: st.dataframe(pd.DataFrame(steps))
-        if pains: st.dataframe(pd.DataFrame(pains, columns=["Pain Points"]))
+        if steps:
+            st.dataframe(pd.DataFrame(steps))
+        if pains:
+            st.dataframe(pd.DataFrame(pains, columns=["Pain Points"]))
 
     with tabs[3]:
         st.json(org)
-        if nodes: st.dataframe(pd.DataFrame(nodes))
-        if notes: st.write(notes)
+        if nodes:
+            st.dataframe(pd.DataFrame(nodes))
+        if notes:
+            st.write(notes)
 
     with tabs[4]:
         if parts:
@@ -232,3 +363,4 @@ if "company_data" in st.session_state:
             file_name="company_analysis.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
