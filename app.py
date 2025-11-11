@@ -106,7 +106,11 @@ Devuelve SOLO un JSON válido:
 {
  "participants":[{"name":"Matías","role":"Planner"}],
  "organization":{"nodes":[{"name":"Manufactura","type":"department","parent":null}],"notes":["Estructura básica."]},
- "process":{"steps":[{"name":"Inicio","actor":"Cliente","type":"start"},{"name":"Revisión","actor":"Calidad","type":"task"},{"name":"¿Aprobado?","actor":"Supervisor","type":"decision"},{"name":"Fin","actor":"Sistema","type":"end"}],
+ "process":{"steps":[{"name":"Inicio","actor":"Cliente","department":"Comercial","type":"start"},
+ {"name":"Revisión","actor":"Sofía","department":"Calidad","type":"task"},
+ {"name":"Producción","actor":"Carlos","department":"Producción","type":"task"},
+ {"name":"¿Aprobado?","actor":"Lucía","department":"Calidad","type":"decision"},
+ {"name":"Fin","actor":"Sistema","department":"TI","type":"end"}],
  "pains":["Retraso en revisión"],"recommendations":[{"area":"Calidad","recommendation":"Automatizar control"}]}
 }"""
     else:
@@ -116,7 +120,11 @@ Return ONLY a valid JSON as:
 {
  "participants":[{"name":"Matías","role":"Planner"}],
  "organization":{"nodes":[{"name":"Manufacturing","type":"department","parent":null}],"notes":["Basic structure."]},
- "process":{"steps":[{"name":"Start","actor":"Client","type":"start"},{"name":"Review","actor":"Quality","type":"task"},{"name":"Approved?","actor":"Supervisor","type":"decision"},{"name":"End","actor":"System","type":"end"}],
+ "process":{"steps":[{"name":"Start","actor":"Client","department":"Sales","type":"start"},
+ {"name":"Review","actor":"Sofía","department":"Quality","type":"task"},
+ {"name":"Production","actor":"Carlos","department":"Manufacturing","type":"task"},
+ {"name":"Approved?","actor":"Lucía","department":"Quality","type":"decision"},
+ {"name":"End","actor":"System","department":"IT","type":"end"}],
  "pains":["Delay in review"],"recommendations":[{"area":"Quality","recommendation":"Automate QC"}]}
 }"""
 
@@ -139,40 +147,69 @@ def call_openai_json(system_prompt, user_text):
 def sanitize_label(text):
     return re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ ,.!?¿¡:/()_-]', '', text or '').replace("\n", " ")
 
+# --- Swimlane: Mapa de Procesos ---
 def draw_process_mermaid(steps):
     if not steps:
         return None
+
+    # Detectar departamentos únicos
+    depts = []
+    for s in steps:
+        d = s.get("department") or s.get("actor") or "General"
+        if d not in depts:
+            depts.append(d)
+
     mermaid = "flowchart LR\n"
-    for i, s in enumerate(steps):
-        name = sanitize_label(s.get("name", f"Paso {i+1}"))
-        actor = sanitize_label(s.get("actor", ""))
-        label = f"{name}\\n({actor})" if actor else name
-        node_type = s.get("type", "task")
-        if node_type == "start":
-            mermaid += f"    N{i}((\"{label}\"))\n"
-        elif node_type == "end":
-            mermaid += f"    N{i}((\"{label}\"))\n"
-        elif node_type == "decision":
-            mermaid += f"    N{i}{{\"{label}\"}}\n"
-        else:
-            mermaid += f"    N{i}[\"{label}\"]\n"
-        if i < len(steps) - 1:
-            mermaid += f"    N{i} --> N{i+1}\n"
-    return f"""
+
+    # Crear subgraph para cada departamento
+    node_map = {}
+    for d in depts:
+        mermaid += f"  subgraph {sanitize_label(d)}\n"
+        for i, s in enumerate([x for x in steps if (x.get('department') or x.get('actor') or 'General') == d]):
+            idx = steps.index(s)
+            name = sanitize_label(s.get("name", f"Paso {i+1}"))
+            actor = sanitize_label(s.get("actor", ""))
+            label = f"{name}\\n({actor})" if actor else name
+            node_type = s.get("type", "task")
+            if node_type == "start":
+                mermaid += f"    N{idx}((\"{label}\"))\n"
+            elif node_type == "end":
+                mermaid += f"    N{idx}((\"{label}\"))\n"
+            elif node_type == "decision":
+                mermaid += f"    N{idx}{{\"{label}\"}}\n"
+            else:
+                mermaid += f"    N{idx}[\"{label}\"]\n"
+            node_map[idx] = d
+        mermaid += "  end\n"
+
+    # Conexiones entre pasos
+    for i in range(len(steps) - 1):
+        mermaid += f"  N{i} --> N{i+1}\n"
+
+    # Configuración visual
+    html = f"""
     <div class="mermaid">
     {mermaid}
     </div>
     <script type="module">
       import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-      mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});
+      mermaid.initialize({{
+        startOnLoad: true,
+        theme: "neutral",
+        flowchart: {{
+          curve: "basis",
+          htmlLabels: true
+        }}
+      }});
     </script>
     """
+    return html
 
+# --- Estructura Organizacional ---
 def draw_org_mermaid(nodes):
     if not nodes:
         return None
 
-    # Si no hay jerarquía, se crea una raíz
     has_parents = any(n.get("parent") for n in nodes)
     if not has_parents:
         root = {"name": "Empresa Principal", "type": "group", "parent": None}
@@ -190,7 +227,6 @@ def draw_org_mermaid(nodes):
         id_map[name] = node_id
         label = f"{name}\\n({ntype})" if ntype else name
         mermaid += f'    {node_id}["{label}"]\n'
-
         if "group" in ntype:
             mermaid += f"    class {node_id} groupNode;\n"
         elif "company" in ntype or "plant" in ntype:
@@ -213,7 +249,7 @@ def draw_org_mermaid(nodes):
     classDef teamNode fill:#e0e0e0,stroke:#616161,stroke-width:1px,color:#000;
     """
 
-    return f"""
+    html = f"""
     <div class="mermaid">
     {mermaid}
     </div>
@@ -222,6 +258,7 @@ def draw_org_mermaid(nodes):
       mermaid.initialize({{ startOnLoad: true, theme: "neutral" }});
     </script>
     """
+    return html
 
 # ==============================
 # ANÁLISIS
@@ -249,7 +286,7 @@ if "data" in st.session_state:
 
     with tabs[0]:
         html = draw_process_mermaid(steps)
-        if html: components.html(html, height=600, scrolling=True)
+        if html: components.html(html, height=650, scrolling=True)
         else: st.info(TXT["no_data"])
 
     with tabs[1]:
