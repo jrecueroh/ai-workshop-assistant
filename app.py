@@ -6,9 +6,9 @@ import re
 import io
 import streamlit.components.v1 as components
 
-# ==============================
+# =====================================
 # CONFIGURACIÓN GENERAL
-# ==============================
+# =====================================
 st.set_page_config(page_title="AI Workshop Assistant PRO", layout="wide")
 
 st.markdown(
@@ -17,14 +17,15 @@ st.markdown(
     div[data-testid="stHorizontalBlock"] > div:nth-child(2) {text-align:right;}
     button[role="button"] {border-radius:12px!important;}
     .main {font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;}
+    button[title="View fullscreen"]{visibility: hidden;}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# ==============================
+# =====================================
 # IDIOMA
-# ==============================
+# =====================================
 if "lang" not in st.session_state:
     st.session_state.lang = "es"
 
@@ -43,15 +44,15 @@ with col2:
 
 lang = st.session_state.lang
 
-# ==============================
+# =====================================
 # TEXTOS
-# ==============================
+# =====================================
 TXT = {
     "es": {
-        "intro": "Analiza descripciones o transcripciones de workshops para generar **procesos y estructuras organizacionales** automáticamente.",
-        "input_label": "✏️ Pega aquí la transcripción o descripción:",
+        "intro": "Analiza descripciones o transcripciones de workshops para generar **procesos, estructura organizativa, participantes, KPIs y recomendaciones** automáticamente.",
+        "input_label": "✏️ Pega aquí la transcripción o descripción del workshop:",
         "input_ph": "Ejemplo: Matías: el cliente hace un pedido. Sofía: se revisa la orden...",
-        "analyze_btn": "🚀 Analizar empresa y procesos",
+        "analyze_btn": "🚀 Analizar workshop",
         "spinner": "Analizando con IA...",
         "warn_no_text": "Por favor introduce texto para analizar.",
         "tabs": [
@@ -60,17 +61,20 @@ TXT = {
             "🏗️ Estructura Organizacional",
             "📋 Datos Organizativos",
             "👥 Participantes",
+            "📊 KPIs",
+            "🔍 Root Causes",
+            "🚦 Decisiones",
             "💡 Recomendaciones IA",
             "📤 Exportar",
         ],
         "no_data": "No se detectaron datos.",
-        "export_label": "⬇️ Descargar Excel con toda la información",
+        "export_label": "⬇️ Descargar Excel con toda la información PRO",
     },
     "en": {
-        "intro": "Analyze workshop transcripts to automatically build **process and org structures**.",
-        "input_label": "✏️ Paste transcript or description:",
-        "input_ph": "Example: Matías: client places an order. Sofía: quality reviews the batch...",
-        "analyze_btn": "🚀 Analyze company and processes",
+        "intro": "Analyze workshop transcripts to automatically generate **processes, org structure, participants, KPIs and AI recommendations**.",
+        "input_label": "✏️ Paste the workshop transcript or description:",
+        "input_ph": "Example: Matías: the client places an order. Sofía: quality reviews it...",
+        "analyze_btn": "🚀 Analyze workshop",
         "spinner": "Analyzing with AI...",
         "warn_no_text": "Please enter text to analyze.",
         "tabs": [
@@ -79,126 +83,139 @@ TXT = {
             "🏗️ Org Structure",
             "📋 Org Data",
             "👥 Participants",
+            "📊 KPIs",
+            "🔍 Root Causes",
+            "🚦 Decisions",
             "💡 AI Recommendations",
             "📤 Export",
         ],
         "no_data": "No data detected.",
-        "export_label": "⬇️ Download Excel with all information",
+        "export_label": "⬇️ Download Excel (full PRO data)",
     },
 }[lang]
 
 st.markdown(TXT["intro"])
 
-# ==============================
-# OPENAI CLIENT
-# ==============================
+# =====================================
+# CLIENTE OPENAI
+# =====================================
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# ==============================
+# =====================================
 # INPUT
-# ==============================
+# =====================================
 text = st.text_area(
-    TXT["input_label"], placeholder=TXT["input_ph"], height=200, key="main_text"
+    TXT["input_label"], placeholder=TXT["input_ph"], height=220, key="main_text"
 )
 analyze = st.button(TXT["analyze_btn"])
 
 
-# ==============================
+# =====================================
 # HELPERS
-# ==============================
+# =====================================
 def preprocess_transcript(t: str):
     """
-    Detecta nombres tipo 'Matías:' y devuelve:
-    - lista de speakers
-    - texto limpio sin los 'Nombre:'
+    Detecta patrones tipo 'Nombre:' al inicio de frase.
+    Devuelve:
+    - lista de nombres únicos
+    - texto sin los 'Nombre:'
     """
     speakers = re.findall(r"(\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+):", t)
     clean = re.sub(r"\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+:\s*", "", t)
-    return {"speakers": list(set(speakers)), "text": clean.strip()}
+    return {"speakers": sorted(list(set(speakers))), "text": clean.strip()}
 
 
 def unified_prompt(current_lang: str) -> str:
-    if current_lang == "es":
-        return """
-Eres un consultor experto en procesos y diseño organizativo.
+    # Prompts en un solo idioma "conceptual" (la entrada puede ser ES/EN sin problema)
+    return """
+Eres un CONSULTOR EXPERTO en:
+- Procesos de negocio (BPMN, Lean, Six Sigma)
+- Diseño organizativo
+- Transformación financiera y operacional
+- Análisis de workshops y reuniones
 
-Del siguiente texto debes extraer TRES bloques JSON:
-1) "organization"
-2) "process"
-3) "participants"
-
-Devuelve SOLO un JSON válido con esta estructura (ejemplo):
+Analiza el siguiente WORKSHOP (con personas hablando, problemas, ideas, procesos) y devuelve SOLO un JSON **PROFESIONAL**, con esta estructura EXACTA:
 
 {
   "organization": {
     "nodes": [
-      {"name": "Grupo Central", "type": "group", "parent": null},
-      {"name": "Planta Norte", "type": "plant", "parent": "Grupo Central"},
-      {"name": "Producción", "type": "department", "parent": "Planta Norte"}
+      {
+        "name": "",
+        "type": "group | company | plant | department | team",
+        "parent": "",
+        "responsibilities": [],
+        "participants": []
+      }
     ],
-    "notes": ["Estructura jerárquica básica con plantas y departamentos."]
+    "hierarchy": [
+      {"level": "", "elements": []}
+    ],
+    "notes": []
   },
+
+  "participants": [
+    {
+      "name": "",
+      "role": "",
+      "department": "",
+      "responsibilities": [],
+      "mentions": 0,
+      "pain_points": []
+    }
+  ],
+
   "process": {
     "steps": [
-      {"name": "Inicio pedido", "description": "El cliente realiza el pedido", "department": "Ventas", "type": "start"},
-      {"name": "Registro de orden", "description": "Se registra en el sistema", "department": "Ventas", "type": "task"},
-      {"name": "Fabricación del producto", "description": "Se produce el lote", "department": "Producción", "type": "task"},
-      {"name": "Control de inspección", "description": "Calidad revisa el lote", "department": "Calidad", "type": "task"},
-      {"name": "Fin", "description": "Pedido cerrado", "department": "Ventas", "type": "end"}
+      {
+        "name": "",
+        "description": "",
+        "department": "",
+        "type": "start | task | decision | end",
+        "inputs": [],
+        "outputs": [],
+        "systems": [],
+        "pain_points": []
+      }
     ],
-    "departments": ["Ventas", "Producción", "Calidad"],
-    "pains": ["Retrasos en control de calidad"],
+    "pains": [
+      {
+        "pain": "",
+        "severity": "alta | media | baja",
+        "root_cause": "",
+        "impacted_roles": [],
+        "estimated_cost": ""
+      }
+    ],
     "recommendations": [
-      {"area": "Calidad", "recommendation": "Automatizar parte de la inspección", "impact": "High"}
+      {
+        "area": "",
+        "recommendation": "",
+        "impact": "alto | medio | bajo",
+        "effort": "alto | medio | bajo",
+        "estimated_roi": ""
+      }
+    ],
+    "kpis": [
+      {"name": "", "current": "", "target": "", "unit": ""}
+    ],
+    "decisions": [
+      {"topic": "", "decision": "", "owner": ""}
     ]
-  },
-  "participants": ["Matías", "Sofía", "Carlos"]
+  }
 }
 
+REGLAS IMPORTANTES:
+- NO incluyas explicaciones fuera del JSON.
+- NO envuelvas el JSON en ``` ni en texto adicional.
+- NO inventes nombres de personas que no aparezcan.
+- SI puedes inferir roles (ej. 'Director Financiero', 'Analista', etc.), hazlo.
 - Los nombres de personas van SOLO en "participants".
-- En los pasos de proceso NO pongas los nombres de personas, solo el departamento/actividad.
-- Asegúrate de que 'parent' siempre usa el CAMPO 'name' de otro nodo o null.
-"""
-    else:
-        return """
-You are a consultant expert in business processes and organizational design.
-
-From the text, extract THREE JSON blocks:
-1) "organization"
-2) "process"
-3) "participants"
-
-Return ONLY valid JSON with this structure (example):
-
-{
-  "organization": {
-    "nodes": [
-      {"name": "Head Group", "type": "group", "parent": null},
-      {"name": "Plant North", "type": "plant", "parent": "Head Group"},
-      {"name": "Manufacturing", "type": "department", "parent": "Plant North"}
-    ],
-    "notes": ["Hierarchical group with plants and departments."]
-  },
-  "process": {
-    "steps": [
-      {"name": "Order start", "description": "Customer places order", "department": "Sales", "type": "start"},
-      {"name": "Register order", "description": "Order is registered", "department": "Sales", "type": "task"},
-      {"name": "Manufacture product", "description": "Batch is produced", "department": "Manufacturing", "type": "task"},
-      {"name": "Quality inspection", "description": "Quality reviews batch", "department": "Quality", "type": "task"},
-      {"name": "End", "description": "Order closed", "department": "Sales", "type": "end"}
-    ],
-    "departments": ["Sales", "Manufacturing", "Quality"],
-    "pains": ["Delays in inspection"],
-    "recommendations": [
-      {"area": "Quality", "recommendation": "Automate part of QC", "impact": "High"}
-    ]
-  },
-  "participants": ["Matías", "Sofía", "Carlos"]
-}
-
-- Person names must go ONLY in "participants".
-- Process steps MUST NOT include people names; only department/activity.
-- 'parent' must always reference the 'name' of another node, or null.
+- Las descripciones de procesos NO deben tener nombres de personas, solo departamentos o funciones.
+- La estructura organizacional debe agrupar empresa/grupo, departamentos y equipos, con responsabilidades.
+- Extrae todos los pains posibles aunque no estén explícitos.
+- Genera recomendaciones profesionales con impacto y esfuerzo.
+- Incluye KPIs relevantes si el contexto es financiero u operacional (ej: DSO, tiempo medio de proceso, etc.).
+- Evita listas vacías si hay información en el texto.
 """
 
 
@@ -210,13 +227,13 @@ def call_openai_json(system_prompt: str, user_text: str):
                 {
                     "role": "system",
                     "content": system_prompt
-                    + "\n\n⚠️ Devuelve solo JSON, sin explicaciones alrededor.",
+                    + "\n\n⚠️ Devuelve solo JSON válido, sin explicaciones.",
                 },
-                {"role": "user", "content": user_text[:4000]},
+                {"role": "user", "content": user_text[:6000]},
             ],
-            temperature=0.2,
-            max_tokens=1200,
-            timeout=40,
+            temperature=0.25,
+            max_tokens=1500,
+            timeout=60,
         )
         content = resp.choices[0].message.content.strip()
     except Exception as e:
@@ -238,17 +255,19 @@ def sanitize_label(text: str) -> str:
     if not text:
         return ""
     return (
-        text.replace('"', "")
+        str(text)
+        .replace('"', "")
         .replace("'", "")
         .replace("\n", " ")
         .strip()
     )
 
 
-# ==============================
+# =====================================
 # VISUALIZACIÓN: MAPA DE PROCESOS (MERMAID)
-# ==============================
-def draw_process_mermaid(steps):
+# =====================================
+def draw_process_mermaid(process_dict: dict):
+    steps = process_dict.get("steps", []) if process_dict else []
     if not steps:
         return None
 
@@ -265,7 +284,8 @@ def draw_process_mermaid(steps):
     # lanes por departamento (Mermaid subgraph)
     for dept in departments:
         mermaid += f"  subgraph {sanitize_label(dept)}\n"
-        for s in [x for x in steps if (x.get("department") or "General") == dept]:
+        dept_steps = [x for x in steps if (x.get("department") or "General") == dept]
+        for s in dept_steps:
             idx = steps.index(s)
             name = sanitize_label(s.get("name", f"Paso {idx+1}"))
             node_type = s.get("type", "task")
@@ -405,18 +425,25 @@ def draw_process_mermaid(steps):
     return html
 
 
-# ==============================
+# =====================================
 # VISUALIZACIÓN: ORGANIGRAMA (MERMAID)
-# ==============================
-def draw_org_mermaid(nodes):
+# =====================================
+def draw_org_mermaid(org_dict: dict):
+    nodes = org_dict.get("nodes", []) if org_dict else []
     if not nodes:
         return None
 
-    # Si no hay jerarquía clara, añadimos un root
+    # Si no hay jerarquía clara, añadimos un root genérico
     has_parents = any(n.get("parent") for n in nodes)
     if not has_parents:
-        root_name = "Empresa Principal" if lang == "es" else "Main Company"
-        root = {"name": root_name, "type": "group", "parent": None}
+        root_name = "Empresa" if lang == "es" else "Company"
+        root = {
+            "name": root_name,
+            "type": "group",
+            "parent": None,
+            "responsibilities": [],
+            "participants": [],
+        }
         for n in nodes:
             n["parent"] = root_name
         nodes.insert(0, root)
@@ -500,9 +527,9 @@ def draw_org_mermaid(nodes):
     return html
 
 
-# ==============================
+# =====================================
 # ANÁLISIS CON IA
-# ==============================
+# =====================================
 if analyze:
     if not text.strip():
         st.warning(TXT["warn_no_text"])
@@ -510,36 +537,52 @@ if analyze:
         with st.spinner(TXT["spinner"]):
             prep = preprocess_transcript(text)
             data = call_openai_json(unified_prompt(lang), prep["text"])
-            # añadimos hablantes detectados como participantes (sin duplicar)
-            detected = prep["speakers"]
-            existing_participants = set(data.get("participants", []))
-            for sp in detected:
-                if sp not in existing_participants:
-                    existing_participants.add(sp)
-            data["participants"] = list(existing_participants)
+
+            # mergeamos nombres detectados como participantes extra (si no estaban)
+            speakers = prep["speakers"]
+            participants = data.get("participants", [])
+            existing_names = {p.get("name") for p in participants if isinstance(p, dict)}
+            for sp in speakers:
+                if sp not in existing_names:
+                    participants.append(
+                        {
+                            "name": sp,
+                            "role": "",
+                            "department": "",
+                            "responsibilities": [],
+                            "mentions": 0,
+                            "pain_points": [],
+                        }
+                    )
+            data["participants"] = participants
+
             st.session_state.company_data = data
 
-# ==============================
+# =====================================
 # RESULTADOS
-# ==============================
+# =====================================
 if "company_data" in st.session_state:
     d = st.session_state.company_data
 
-    org = d.get("organization", {})
-    proc = d.get("process", {})
-    participants = d.get("participants", [])
+    org = d.get("organization", {}) or {}
+    proc = d.get("process", {}) or {}
+    participants = d.get("participants", []) or []
 
-    steps = proc.get("steps", [])
-    pains = proc.get("pains", [])
-    recs = proc.get("recommendations", [])
-    nodes = org.get("nodes", [])
-    org_notes = org.get("notes", [])
+    steps = proc.get("steps", []) or []
+    pains = proc.get("pains", []) or []
+    recs = proc.get("recommendations", []) or []
+    kpis = proc.get("kpis", []) or []
+    decisions = proc.get("decisions", []) or []
+
+    nodes = org.get("nodes", []) or []
+    hierarchy = org.get("hierarchy", []) or []
+    org_notes = org.get("notes", []) or []
 
     tabs = st.tabs(TXT["tabs"])
 
     # --- TAB 0: Mapa de Procesos ---
     with tabs[0]:
-        html = draw_process_mermaid(steps)
+        html = draw_process_mermaid(proc)
         if html:
             components.html(html, height=950, scrolling=True)
         else:
@@ -547,18 +590,21 @@ if "company_data" in st.session_state:
 
     # --- TAB 1: Datos del Proceso ---
     with tabs[1]:
-        st.subheader("JSON de proceso")
+        st.subheader("JSON completo del proceso")
         st.json(proc)
         if steps:
-            st.subheader("Tabla de pasos")
+            st.subheader("Pasos del proceso")
             st.dataframe(pd.DataFrame(steps))
         if pains:
-            st.subheader("Pain points")
-            st.dataframe(pd.DataFrame(pains, columns=["Pain Points"]))
+            st.subheader("Pains del proceso")
+            st.dataframe(pd.DataFrame(pains))
+        if recs:
+            st.subheader("Recomendaciones (raw)")
+            st.dataframe(pd.DataFrame(recs))
 
     # --- TAB 2: Estructura Organizacional ---
     with tabs[2]:
-        html_org = draw_org_mermaid(nodes)
+        html_org = draw_org_mermaid(org)
         if html_org:
             components.html(html_org, height=850, scrolling=True)
         else:
@@ -569,28 +615,59 @@ if "company_data" in st.session_state:
         st.subheader("JSON de organización")
         st.json(org)
         if nodes:
-            st.subheader("Nodos")
+            st.subheader("Nodos organizativos")
             st.dataframe(pd.DataFrame(nodes))
+        if hierarchy:
+            st.subheader("Jerarquía")
+            st.dataframe(pd.DataFrame(hierarchy))
         if org_notes:
-            st.subheader("Notas")
-            st.write(org_notes)
+            st.subheader("Notas / insights estructurales")
+            for n in org_notes:
+                st.markdown(f"- {n}")
 
     # --- TAB 4: Participantes ---
     with tabs[4]:
         if participants:
-            st.dataframe(pd.DataFrame(participants, columns=["Participante"]))
+            st.subheader("Stakeholders del workshop")
+            st.dataframe(pd.DataFrame(participants))
         else:
             st.info("No se detectaron participantes.")
 
-    # --- TAB 5: Recomendaciones IA ---
+    # --- TAB 5: KPIs ---
     with tabs[5]:
-        if recs:
-            st.dataframe(pd.DataFrame(recs))
+        if kpis:
+            st.subheader("KPIs identificados")
+            st.dataframe(pd.DataFrame(kpis))
         else:
-            st.info(TXT["no_data"])
+            st.info("No se detectaron KPIs explícitos.")
 
-    # --- TAB 6: Exportar ---
+    # --- TAB 6: Root Causes (pains) ---
     with tabs[6]:
+        if pains:
+            st.subheader("Root causes y pains")
+            st.dataframe(pd.DataFrame(pains))
+        else:
+            st.info("No se detectaron pains o causas raíz.")
+
+    # --- TAB 7: Decisiones ---
+    with tabs[7]:
+        if decisions:
+            st.subheader("Decisiones y temas abiertos")
+            st.dataframe(pd.DataFrame(decisions))
+        else:
+            st.info("No se detectaron decisiones claras en el workshop.")
+
+    # --- TAB 8: Recomendaciones IA ---
+    with tabs[8]:
+        if recs:
+            st.subheader("Recomendaciones priorizadas")
+            df = pd.DataFrame(recs)
+            st.dataframe(df)
+        else:
+            st.info("La IA no ha generado recomendaciones explícitas.")
+
+    # --- TAB 9: Exportar ---
+    with tabs[9]:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             pd.DataFrame(steps).to_excel(
@@ -600,10 +677,19 @@ if "company_data" in st.session_state:
                 excel_writer=writer, sheet_name="Pains", index=False
             )
             pd.DataFrame(recs).to_excel(
-                excel_writer=writer, sheet_name="Recs", index=False
+                excel_writer=writer, sheet_name="Recommendations", index=False
+            )
+            pd.DataFrame(kpis).to_excel(
+                excel_writer=writer, sheet_name="KPIs", index=False
+            )
+            pd.DataFrame(decisions).to_excel(
+                excel_writer=writer, sheet_name="Decisions", index=False
             )
             pd.DataFrame(nodes).to_excel(
                 excel_writer=writer, sheet_name="OrgNodes", index=False
+            )
+            pd.DataFrame(hierarchy).to_excel(
+                excel_writer=writer, sheet_name="OrgHierarchy", index=False
             )
             pd.DataFrame(participants).to_excel(
                 excel_writer=writer, sheet_name="Participants", index=False
@@ -612,8 +698,8 @@ if "company_data" in st.session_state:
         st.download_button(
             label=TXT["export_label"],
             data=buffer,
-            file_name="company_analysis.xlsx",
+            file_name="workshop_analysis_pro.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 else:
-    st.info("👆 Introduce texto y pulsa en analizar para ver resultados.")
+    st.info("👆 Pega una transcripción de workshop y pulsa en analizar para ver el asistente en acción.")
