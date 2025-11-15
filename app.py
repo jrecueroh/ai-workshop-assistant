@@ -162,7 +162,7 @@ def draw_process_mermaid(steps):
     node_map = {}
     mermaid = "flowchart LR\n"
 
-    # === Crear un lane (subgraph) por departamento ===
+    # === Crear subgraph (lane) por departamento ===
     for dept in departments:
         mermaid += f"  subgraph {sanitize_label(dept)}\n"
         for i, s in enumerate([x for x in steps if (x.get('department') or x.get('actor') or 'General') == dept]):
@@ -193,38 +193,37 @@ def draw_process_mermaid(steps):
 
     # === Estilos Mermaid ===
     mermaid += """
-    classDef startNode fill:#C8E6C9,stroke:#2E7D32,stroke-width:2.5px,color:#000,font-size:18px,font-weight:bold;
-    classDef endNode fill:#FFCDD2,stroke:#B71C1C,stroke-width:2.5px,color:#000,font-size:18px,font-weight:bold;
-    classDef decisionNode fill:#FFF9C4,stroke:#F57F17,stroke-width:2.5px,color:#000,font-size:18px,font-weight:bold;
-    classDef taskNode fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#000,font-size:18px,font-weight:bold;
-    linkStyle default stroke-width:2px;
+    classDef startNode fill:#C8E6C9,stroke:#2E7D32,stroke-width:3px,color:#000,font-size:22px,font-weight:bold;
+    classDef endNode fill:#FFCDD2,stroke:#B71C1C,stroke-width:3px,color:#000,font-size:22px,font-weight:bold;
+    classDef decisionNode fill:#FFF9C4,stroke:#F57F17,stroke-width:3px,color:#000,font-size:22px,font-weight:bold;
+    classDef taskNode fill:#E3F2FD,stroke:#1565C0,stroke-width:2.5px,color:#000,font-size:22px,font-weight:bold;
+    linkStyle default stroke-width:2.5px;
     """
 
-    # === HTML y CSS para ajuste dinámico ===
+    # === HTML / CSS / Zoom ===
     html = f"""
-    <div id="graph-container" style="position:relative;width:100%;height:900px;overflow:hidden;border:1px solid #ddd;">
+    <div id="graph-container" style="position:relative;width:100%;height:1000px;overflow:hidden;border:1px solid #ddd;">
       <div id="zoom-controls" style="
           position:absolute;top:10px;right:10px;z-index:20;
           background:rgba(255,255,255,0.9);padding:5px 8px;border-radius:6px;
-          box-shadow:0 1px 3px rgba(0,0,0,0.3);font-size:20px;">
+          box-shadow:0 1px 3px rgba(0,0,0,0.3);font-size:22px;">
         🔍 <button onclick="zoomIn()">+</button>
         <button onclick="zoomOut()">−</button>
         <button onclick="resetZoom()">⟳</button>
       </div>
 
-      <div id="graph" class="mermaid" style="transform-origin: 0 0;">
+      <div id="graph" class="mermaid" style="transform-origin: 0 0; width: 200%; margin-left: -10%;">
       {mermaid}
       </div>
     </div>
 
     <style>
-      /* Ajustar cajas al contenido */
+      /* Texto grande y cajas autoajustables */
       .mermaid svg {{
         font-family: 'Inter', 'Segoe UI', sans-serif !important;
-        font-size: 18px !important;
-        font-weight: 600 !important;
+        font-size: 22px !important;
+        font-weight: 700 !important;
       }}
-
       .mermaid svg foreignObject div {{
         display: flex;
         align-items: center;
@@ -233,26 +232,25 @@ def draw_process_mermaid(steps):
         white-space: normal !important;
         word-wrap: break-word;
         width: auto !important;
-        min-width: 180px;
-        max-width: 280px;
-        padding: 10px 14px;
+        min-width: 220px;
+        max-width: 400px;
+        min-height: 70px;
+        padding: 14px 18px;
         line-height: 1.3;
       }}
-
       .mermaid svg rect, .mermaid svg ellipse {{
-        rx: 14px; ry: 14px;
-        filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.15));
+        rx: 16px; ry: 16px;
+        filter: drop-shadow(1px 1px 3px rgba(0,0,0,0.15));
       }}
-
       .mermaid svg text {{
-        fill: #111 !important;
+        fill: #000 !important;
       }}
-
       button {{
         border: 1px solid #ccc;
-        border-radius: 4px;
+        border-radius: 6px;
         background: #f9f9f9;
         cursor: pointer;
+        font-size: 18px;
       }}
       button:hover {{
         background: #e0e0e0;
@@ -267,26 +265,26 @@ def draw_process_mermaid(steps):
         flowchart: {{
           curve: "basis",
           htmlLabels: true,
-          useMaxWidth: true,
+          useMaxWidth: false
         }}
       }});
 
-      // === Zoom y Pan ===
+      // === Zoom / Pan ===
       let scale = 1;
       const container = document.getElementById('graph-container');
       const graph = document.getElementById('graph');
       container.addEventListener('wheel', e => {{
         e.preventDefault();
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        scale = Math.min(Math.max(0.3, scale + delta), 3);
+        scale = Math.min(Math.max(0.4, scale + delta), 3);
         graph.style.transform = `scale(${{scale}})`;
       }});
-      function zoomIn() {{ scale = Math.min(scale + 0.2, 3); graph.style.transform = `scale(${{scale}})`; }}
-      function zoomOut() {{ scale = Math.max(scale - 0.2, 0.3); graph.style.transform = `scale(${{scale}})`; }}
+      function zoomIn() {{ scale = Math.min(scale + 0.25, 3); graph.style.transform = `scale(${{scale}})`; }}
+      function zoomOut() {{ scale = Math.max(scale - 0.25, 0.4); graph.style.transform = `scale(${{scale}})`; }}
       function resetZoom() {{ scale = 1; graph.style.transform = `scale(1)`; }}
       window.zoomIn = zoomIn; window.zoomOut = zoomOut; window.resetZoom = resetZoom;
 
-      // Drag (Pan)
+      // Arrastre
       let isDragging = false, startX, startY, offsetX=0, offsetY=0;
       container.addEventListener('mousedown', e => {{ isDragging = true; startX = e.clientX - offsetX; startY = e.clientY - offsetY; }});
       container.addEventListener('mouseup', () => isDragging = false);
@@ -300,10 +298,6 @@ def draw_process_mermaid(steps):
     </script>
     """
     return html
-
-
-
-
 
 # --- Estructura Organizacional ---
 def draw_org_mermaid(nodes):
