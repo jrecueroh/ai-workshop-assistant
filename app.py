@@ -55,9 +55,9 @@ TXT = {
         "analyze_btn": "🚀 Analizar workshop",
         "spinner": "Analizando con IA...",
         "warn_no_text": "Por favor introduce texto para analizar.",
+        # OJO: ya NO hay 'Datos del proceso'
         "tabs": [
             "🗺️ Mapa de Procesos",
-            "🧩 Datos del Proceso",
             "🏗️ Estructura Organizacional",
             "📋 Datos Organizativos",
             "👥 Participantes",
@@ -79,7 +79,6 @@ TXT = {
         "warn_no_text": "Please enter text to analyze.",
         "tabs": [
             "🗺️ Process Map",
-            "🧩 Process Data",
             "🏗️ Org Structure",
             "📋 Org Data",
             "👥 Participants",
@@ -126,7 +125,7 @@ def preprocess_transcript(t: str):
 
 
 def unified_prompt(current_lang: str) -> str:
-    # Prompts en un solo idioma "conceptual" (la entrada puede ser ES/EN sin problema)
+    # Prompt PRO: fuerza estructura rica, KPIs, pains, etc.
     return """
 Eres un CONSULTOR EXPERTO en:
 - Procesos de negocio (BPMN, Lean, Six Sigma)
@@ -160,7 +159,8 @@ Analiza el siguiente WORKSHOP (con personas hablando, problemas, ideas, procesos
       "department": "",
       "responsibilities": [],
       "mentions": 0,
-      "pain_points": []
+      "pain_points": [],
+      "influence": "alta | media | baja"
     }
   ],
 
@@ -207,15 +207,17 @@ Analiza el siguiente WORKSHOP (con personas hablando, problemas, ideas, procesos
 REGLAS IMPORTANTES:
 - NO incluyas explicaciones fuera del JSON.
 - NO envuelvas el JSON en ``` ni en texto adicional.
-- NO inventes nombres de personas que no aparezcan.
+- NO inventes nombres de personas que no aparezcan en el workshop.
 - SI puedes inferir roles (ej. 'Director Financiero', 'Analista', etc.), hazlo.
+- Usa el nombre de la empresa si aparece (ej: 'Grupo Financiero', 'Empresa X') como nodo raíz (type 'group' o 'company', parent null).
 - Los nombres de personas van SOLO en "participants".
 - Las descripciones de procesos NO deben tener nombres de personas, solo departamentos o funciones.
 - La estructura organizacional debe agrupar empresa/grupo, departamentos y equipos, con responsabilidades.
-- Extrae todos los pains posibles aunque no estén explícitos.
-- Genera recomendaciones profesionales con impacto y esfuerzo.
-- Incluye KPIs relevantes si el contexto es financiero u operacional (ej: DSO, tiempo medio de proceso, etc.).
-- Evita listas vacías si hay información en el texto.
+- Genera SIEMPRE al menos 3 pains con root_cause y estimated_cost, si hay suficiente información.
+- Genera SIEMPRE al menos 3 recomendaciones relevantes, con impacto y esfuerzo.
+- Genera SIEMPRE al menos 3 KPIs relevantes al contexto, aunque no se mencionen explícitos (por ejemplo, en Finanzas: DSO, tiempo medio de facturación, etc.).
+- Incluye decisiones explícitas e implícitas que el equipo debe tomar.
+- Evita listas vacías si hay información suficiente en el texto.
 """
 
 
@@ -348,6 +350,7 @@ def draw_process_mermaid(process_dict: dict):
         text-align: center;
         white-space: normal !important;
         word-wrap: break-word;
+        word-break: break-word;
         width: auto !important;
         min-width: 220px;
         max-width: 420px;
@@ -436,7 +439,9 @@ def draw_org_mermaid(org_dict: dict):
     # Si no hay jerarquía clara, añadimos un root genérico
     has_parents = any(n.get("parent") for n in nodes)
     if not has_parents:
-        root_name = "Empresa" if lang == "es" else "Company"
+        root_name = "Grupo Financiero" if any("financ" in (n.get("name","").lower()) for n in nodes) else (
+            "Empresa" if lang == "es" else "Company"
+        )
         root = {
             "name": root_name,
             "type": "group",
@@ -460,9 +465,9 @@ def draw_org_mermaid(org_dict: dict):
         label = name
         mermaid += f'  {node_id}["{label}"]\n'
 
-        if "group" in ntype:
+        if "group" in ntype or "company" in ntype:
             mermaid += f"  class {node_id} groupNode;\n"
-        elif "company" in ntype or "plant" in ntype:
+        elif "plant" in ntype:
             mermaid += f"  class {node_id} plantNode;\n"
         elif "department" in ntype:
             mermaid += f"  class {node_id} deptNode;\n"
@@ -500,6 +505,7 @@ def draw_org_mermaid(org_dict: dict):
         text-align:center;
         white-space:normal !important;
         word-wrap:break-word;
+        word-break:break-word;
         width:auto !important;
         min-width:200px;
         max-width:420px;
@@ -541,7 +547,9 @@ if analyze:
             # mergeamos nombres detectados como participantes extra (si no estaban)
             speakers = prep["speakers"]
             participants = data.get("participants", [])
-            existing_names = {p.get("name") for p in participants if isinstance(p, dict)}
+            existing_names = {
+                p.get("name") for p in participants if isinstance(p, dict)
+            }
             for sp in speakers:
                 if sp not in existing_names:
                     participants.append(
@@ -552,6 +560,7 @@ if analyze:
                             "responsibilities": [],
                             "mentions": 0,
                             "pain_points": [],
+                            "influence": "",
                         }
                     )
             data["participants"] = participants
@@ -588,31 +597,17 @@ if "company_data" in st.session_state:
         else:
             st.info(TXT["no_data"])
 
-    # --- TAB 1: Datos del Proceso ---
+    # --- TAB 1: Estructura Organizacional ---
     with tabs[1]:
-        st.subheader("JSON completo del proceso")
-        st.json(proc)
-        if steps:
-            st.subheader("Pasos del proceso")
-            st.dataframe(pd.DataFrame(steps))
-        if pains:
-            st.subheader("Pains del proceso")
-            st.dataframe(pd.DataFrame(pains))
-        if recs:
-            st.subheader("Recomendaciones (raw)")
-            st.dataframe(pd.DataFrame(recs))
-
-    # --- TAB 2: Estructura Organizacional ---
-    with tabs[2]:
         html_org = draw_org_mermaid(org)
         if html_org:
             components.html(html_org, height=850, scrolling=True)
         else:
             st.info(TXT["no_data"])
 
-    # --- TAB 3: Datos Organizativos ---
-    with tabs[3]:
-        st.subheader("JSON de organización")
+    # --- TAB 2: Datos Organizativos ---
+    with tabs[2]:
+        st.subheader("Estructura (JSON)")
         st.json(org)
         if nodes:
             st.subheader("Nodos organizativos")
@@ -625,40 +620,54 @@ if "company_data" in st.session_state:
             for n in org_notes:
                 st.markdown(f"- {n}")
 
-    # --- TAB 4: Participantes ---
-    with tabs[4]:
+    # --- TAB 3: Participantes (formato consultoría) ---
+    with tabs[3]:
         if participants:
             st.subheader("Stakeholders del workshop")
-            st.dataframe(pd.DataFrame(participants))
+            df_part = pd.DataFrame(participants)
+            # orden de columnas si existen
+            cols_order = [
+                "name",
+                "role",
+                "department",
+                "responsibilities",
+                "pain_points",
+                "mentions",
+                "influence",
+            ]
+            existing_cols = [c for c in cols_order if c in df_part.columns]
+            other_cols = [c for c in df_part.columns if c not in existing_cols]
+            df_part = df_part[existing_cols + other_cols]
+            st.dataframe(df_part)
         else:
             st.info("No se detectaron participantes.")
 
-    # --- TAB 5: KPIs ---
-    with tabs[5]:
+    # --- TAB 4: KPIs ---
+    with tabs[4]:
         if kpis:
             st.subheader("KPIs identificados")
             st.dataframe(pd.DataFrame(kpis))
         else:
-            st.info("No se detectaron KPIs explícitos.")
+            st.info("No se detectaron KPIs explícitos o inferidos.")
 
-    # --- TAB 6: Root Causes (pains) ---
-    with tabs[6]:
+    # --- TAB 5: Root Causes (pains) ---
+    with tabs[5]:
         if pains:
             st.subheader("Root causes y pains")
             st.dataframe(pd.DataFrame(pains))
         else:
             st.info("No se detectaron pains o causas raíz.")
 
-    # --- TAB 7: Decisiones ---
-    with tabs[7]:
+    # --- TAB 6: Decisiones ---
+    with tabs[6]:
         if decisions:
             st.subheader("Decisiones y temas abiertos")
             st.dataframe(pd.DataFrame(decisions))
         else:
             st.info("No se detectaron decisiones claras en el workshop.")
 
-    # --- TAB 8: Recomendaciones IA ---
-    with tabs[8]:
+    # --- TAB 7: Recomendaciones IA ---
+    with tabs[7]:
         if recs:
             st.subheader("Recomendaciones priorizadas")
             df = pd.DataFrame(recs)
@@ -666,8 +675,8 @@ if "company_data" in st.session_state:
         else:
             st.info("La IA no ha generado recomendaciones explícitas.")
 
-    # --- TAB 9: Exportar ---
-    with tabs[9]:
+    # --- TAB 8: Exportar ---
+    with tabs[8]:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
             pd.DataFrame(steps).to_excel(
