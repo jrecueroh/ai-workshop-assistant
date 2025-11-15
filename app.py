@@ -252,7 +252,7 @@ linkStyle default stroke-width:2px;
 """
 
     # HTML con WRAP, ZOOM, PAN
-    html = f"""
+    html = """
 <div id="proc-container" style="position:relative;width:100%;height:900px;overflow:hidden;border:1px solid #ddd;">
 <div id="proc-graph" class="mermaid" style="transform-origin:0 0; width:180%;">
 {mermaid}
@@ -284,7 +284,8 @@ let scale=1;
 const container=document.getElementById("proc-container");
 const graph=document.getElementById("proc-graph");
 
-container.addEventListener("wheel",(e)=>{
+container.addEventListener("wheel",(e)=>{{
+
   e.preventDefault();
   scale += (e.deltaY>0? -0.1:0.1);
   scale=Math.min(Math.max(0.4,scale),3);
